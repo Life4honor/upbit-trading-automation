@@ -49,7 +49,7 @@ class GridTradingStrategy(BaseStrategy):
         # 청산 파라미터
         self.total_stop_loss = config.get('total_stop_loss', -3.0)  # 총 손실 한도 (%)
         self.single_grid_profit = config.get('single_grid_profit', 1.0)  # 개별 그리드 수익률 (%)
-        self.long_hold_minutes = config.get('long_hold_minutes', 480)  # 장기 보유 시간 (분, 기본 8시간)
+        self.long_hold_minutes = config.get('long_hold_minutes', 0)  # 장기 보유 시간 (분, 0이면 비활성화)
         self.long_hold_loss_threshold = config.get('long_hold_loss_threshold', -1.0)  # 장기 보유 손절 임계값 (%)
 
         # 그리드 재초기화 파라미터
@@ -261,8 +261,10 @@ class GridTradingStrategy(BaseStrategy):
                 return True, 'TAKE_PROFIT', f"변동성 급증 익절 (+{profit_rate:.2f}%)"
 
         # 5. 장기 보유 손절 (설정된 시간 이상, 일정 손실 중)
-        if holding_minutes >= self.long_hold_minutes and profit_rate < self.long_hold_loss_threshold:
-            return True, 'STOP_LOSS', f"장기 보유 손절 ({profit_rate:.2f}%)"
+        # long_hold_minutes가 0이면 비활성화
+        if self.long_hold_minutes > 0:
+            if holding_minutes >= self.long_hold_minutes and profit_rate < self.long_hold_loss_threshold:
+                return True, 'STOP_LOSS', f"장기 보유 손절 ({profit_rate:.2f}%)"
 
         return False, None, None
 

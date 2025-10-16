@@ -114,7 +114,13 @@ def print_config(config: Dict):
         print(f"  최대 포지션: {config.get('max_positions', 3)}개")
         print(f"  개별 그리드 익절: +{config.get('single_grid_profit', 1.0)}%")
         print(f"  전체 손절: {config.get('total_stop_loss', -3.0)}%")
-        print(f"  장기 보유 손절: {config.get('long_hold_minutes', 480)}분 (-{abs(config.get('long_hold_loss_threshold', -1.0))}% 이상)")
+
+        # 장기 보유 손절 설정
+        long_hold_minutes = config.get('long_hold_minutes', 0)
+        if long_hold_minutes > 0:
+            print(f"  장기 보유 손절: {long_hold_minutes}분 (-{abs(config.get('long_hold_loss_threshold', -1.0))}% 이상)")
+        else:
+            print(f"  장기 보유 손절: 비활성화")
 
         # 그리드 재초기화 설정
         reset_hours = config.get('grid_reset_hours', 24)

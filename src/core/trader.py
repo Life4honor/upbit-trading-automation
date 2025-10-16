@@ -834,19 +834,24 @@ class UnifiedTrader:
         """결과 분석"""
         if not self.trades:
             return {'error': '거래 없음', 'total_trades': 0}
-        
+
         df = pd.DataFrame(self.trades)
-        
+
         total = len(df)
         wins = len(df[df['profit_rate'] > 0])
         losses = total - wins
         win_rate = (wins / total) * 100
-        
+
         total_profit = df['profit'].sum()
-        
+
+        # 수익률 계산: 백테스트와 라이브 모두 동일한 방식으로
         if self.mode == 'backtest':
+            # 백테스트: 최종 자본 기준
             total_rate = ((self.capital - self.initial_capital) / self.initial_capital) * 100
+            final_capital = self.capital
         else:
+            # 라이브: 초기 자본 + 누적 손익
+            final_capital = self.initial_capital + total_profit
             total_rate = (total_profit / self.initial_capital) * 100
         
         # MDD
@@ -867,7 +872,7 @@ class UnifiedTrader:
             'backtest_days': days,
             'config': self.config,
             'initial_capital': self.initial_capital,
-            'final_capital': self.capital if self.mode == 'backtest' else None,
+            'final_capital': final_capital,
             'total_profit': total_profit,
             'total_profit_rate': total_rate,
             'total_trades': total,
@@ -944,12 +949,24 @@ class UnifiedTrader:
         md.append("")
         md.append("| 항목 | 값 |")
         md.append("|------|------|")
-        if self.mode == 'backtest':
-            md.append(f"| 초기 자본 | ₩{results['initial_capital']:,.0f} |")
-            md.append(f"| 최종 자본 | ₩{results['final_capital']:,.0f} |")
+        md.append(f"| 초기 자본 | ₩{results['initial_capital']:,.0f} |")
+        md.append(f"| 최종 자본 | ₩{results['final_capital']:,.0f} |")
         md.append(f"| 총 손익 | ₩{results['total_profit']:,.0f} |")
         emoji = "📈" if results['total_profit_rate'] > 0 else "📉"
-        md.append(f"| 수익률 | {emoji} **{results['total_profit_rate']:+.2f}%** |")
+        md.append(f"| 수익률 (자본 대비) | {emoji} **{results['total_profit_rate']:+.2f}%** |")
+
+        # 평균 거래 수익률 추가
+        if results['total_trades'] > 0:
+            avg_trade_profit = results['avg_profit_rate']
+            avg_emoji = "📈" if avg_trade_profit > 0 else "📉"
+            md.append(f"| 평균 거래 수익률 | {avg_emoji} {avg_trade_profit:+.2f}% |")
+        md.append("")
+
+        # 설명 추가
+        if self.mode == 'backtest':
+            md.append("> **수익률 설명**: '자본 대비'는 초기 자본 전체 대비 수익률, '평균 거래'는 각 거래의 평균 수익률입니다.")
+        else:
+            md.append("> **수익률 설명**: '자본 대비'는 초기 설정 자본 대비 수익률, '평균 거래'는 각 거래의 평균 수익률입니다.")
         md.append("")
         
         # 거래 통계

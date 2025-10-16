@@ -211,6 +211,19 @@ class UnifiedTrader:
             bb_upper, bb_middle, bb_lower = self.strategy.calculate_bollinger_bands(data_5m['close'], 20, 2.0)
             bb_width = self.strategy.calculate_bb_width(data_5m['close'], 20, 2.0)
 
+            # ATR 계산 (그리드 트레이딩 등에서 사용)
+            atr = self.strategy.calculate_atr(data_5m, period=14)
+            # ATR 평균: 최근 20개 ATR 값의 평균 (간단하게)
+            if len(data_5m) >= 34:  # 14 + 20
+                atr_values = []
+                for i in range(20):
+                    start_idx = len(data_5m) - 34 + i
+                    atr_val = self.strategy.calculate_atr(data_5m.iloc[start_idx:start_idx+14], period=14)
+                    atr_values.append(atr_val)
+                atr_ma = sum(atr_values) / len(atr_values)
+            else:
+                atr_ma = atr
+
             result = {
                 'current_price': current_price,
                 'timestamp': data_5m.index[-1],  # 현재 시각 추가 (그리드 재초기화용)
@@ -223,6 +236,8 @@ class UnifiedTrader:
                 'bb_middle': bb_middle,
                 'bb_lower': bb_lower,
                 'bb_width': bb_width,
+                'atr': atr,
+                'atr_ma': atr_ma,
                 'latest_candle': data_5m.iloc[-1],
                 'volume_ma': volume_ma
             }
@@ -258,6 +273,19 @@ class UnifiedTrader:
             bb_upper, bb_middle, bb_lower = self.strategy.calculate_bollinger_bands(data_5m['close'], 20, 2.0)
             bb_width = self.strategy.calculate_bb_width(data_5m['close'], 20, 2.0)
 
+            # ATR 계산 (그리드 트레이딩 등에서 사용)
+            atr = self.strategy.calculate_atr(data_5m, period=14)
+            # ATR 평균: 최근 20개 ATR 값의 평균 (간단하게)
+            if len(data_5m) >= 34:  # 14 + 20
+                atr_values = []
+                for i in range(20):
+                    start_idx = len(data_5m) - 34 + i
+                    atr_val = self.strategy.calculate_atr(data_5m.iloc[start_idx:start_idx+14], period=14)
+                    atr_values.append(atr_val)
+                atr_ma = sum(atr_values) / len(atr_values)
+            else:
+                atr_ma = atr
+
             # 호가 비율 (매수세/매도세)
             try:
                 orderbook = self.api.get_orderbook(self.market)
@@ -282,6 +310,8 @@ class UnifiedTrader:
                 'bb_middle': bb_middle,
                 'bb_lower': bb_lower,
                 'bb_width': bb_width,
+                'atr': atr,
+                'atr_ma': atr_ma,
                 'latest_candle': data_5m.iloc[-1],
                 'volume_ma': volume_ma
             }
@@ -695,6 +725,105 @@ class UnifiedTrader:
     # 실거래
     # ==========================================
     
+    def _log_grid_trading(self, analysis: Dict, timestamp: datetime):
+        """그리드 트레이딩 전략용 로그"""
+        current_price = analysis['current_price']
+
+        # 포지션 정보
+        position_info = ""
+        target_info = ""
+        stop_info = ""
+
+        if self.position:
+            entry_price = self.position['entry_price']
+            profit_rate = (current_price - entry_price) / entry_price * 100
+            profit_emoji = "📈" if profit_rate > 0 else "📉"
+            holding_time = (timestamp - self.position['entry_time']).total_seconds() / 60
+
+            # 익절 목표 (개별 그리드 +1%)
+            target_price = entry_price * (1 + self.strategy.single_grid_profit / 100)
+            target_distance = (target_price - current_price) / current_price * 100
+            target_info = f" | 익절목표: ₩{target_price:,.0f} ({target_distance:+.2f}%)"
+
+            # 손절 기준 (전체 -3%)
+            stop_price = entry_price * (1 + self.strategy.total_stop_loss / 100)
+            stop_distance = (stop_price - current_price) / current_price * 100
+            stop_info = f" | 손절: ₩{stop_price:,.0f} ({stop_distance:+.2f}%)"
+
+            position_info = f" | {profit_emoji} {profit_rate:+.2f}% (평단: ₩{entry_price:,.0f}) | {holding_time:.0f}분"
+
+        # ATR 정보
+        atr_info = ""
+        if 'atr' in analysis and 'atr_ma' in analysis:
+            atr = analysis['atr']
+            atr_ma = analysis['atr_ma']
+            if atr_ma > 0:
+                atr_ratio = atr / atr_ma
+                atr_emoji = "🟢" if atr_ratio < 0.8 else "🟡" if atr_ratio < 1.2 else "🔴"
+                atr_info = f" | {atr_emoji} ATR {atr_ratio:.2f}x"
+
+        # 볼린저 밴드 정보
+        bb_info = ""
+        if 'bb_upper' in analysis and 'bb_lower' in analysis:
+            bb_upper = analysis['bb_upper']
+            bb_lower = analysis['bb_lower']
+            bb_position = (current_price - bb_lower) / (bb_upper - bb_lower) * 100
+            bb_width_pct = (bb_upper - bb_lower) / current_price * 100
+            bb_info = f" | BB {bb_position:.0f}% (폭: {bb_width_pct:.1f}%)"
+
+        # 그리드 정보
+        grid_info = ""
+        if hasattr(self.strategy, 'grid_prices') and self.strategy.grid_prices:
+            grid_count = len(self.strategy.grid_prices)
+            min_grid = min(self.strategy.grid_prices)
+            max_grid = max(self.strategy.grid_prices)
+            grid_position = (current_price - min_grid) / (max_grid - min_grid) * 100
+            grid_info = f" | 그리드: {grid_position:.0f}% ({grid_count}단계)"
+
+        self.log(
+            f"📊 ₩{current_price:,.0f}{position_info}{target_info}{stop_info}{atr_info}{bb_info}{grid_info}"
+        )
+
+    def _log_scalping(self, analysis: Dict, timestamp: datetime):
+        """RSI 스캘핑 등 기존 전략용 로그"""
+        current_price = analysis['current_price']
+
+        # 포지션 정보
+        position_info = ""
+        if self.position:
+            entry_price = self.position['entry_price']
+            profit_rate = (current_price - entry_price) / entry_price * 100
+            profit_emoji = "📈" if profit_rate > 0 else "📉"
+            holding_time = (timestamp - self.position['entry_time']).total_seconds() / 60
+            position_info = f" | {profit_emoji} {profit_rate:+.2f}% (평단 ₩{entry_price:,.0f}) | 보유 {holding_time:.0f}분"
+
+        # 이동평균선 정보
+        sma_info = ""
+        if 'sma_7' in analysis and 'sma_25' in analysis:
+            sma_7 = analysis['sma_7']
+            sma_25 = analysis['sma_25']
+            price_vs_sma7 = (current_price - sma_7) / sma_7 * 100
+            price_vs_sma25 = (current_price - sma_25) / sma_25 * 100
+            sma_info = f" | SMA7 {price_vs_sma7:+.1f}% | SMA25 {price_vs_sma25:+.1f}%"
+
+        # 1시간봉 RSI 정보
+        rsi_1h_info = ""
+        if 'rsi_1h' in analysis:
+            rsi_1h_info = f" | RSI 1h: {analysis['rsi_1h']:.1f}"
+
+        # 호가 비율 정보
+        orderbook_info = ""
+        if 'bid_ask_ratio' in analysis:
+            ratio = analysis['bid_ask_ratio']
+            ratio_emoji = "🔵" if ratio > 1.0 else "🔴"
+            orderbook_info = f" | {ratio_emoji} 호가 {ratio:.2f}"
+
+        self.log(
+            f"📊 ₩{current_price:,.0f}{position_info} | "
+            f"RSI 5m: {analysis['rsi_5m']:.1f} | "
+            f"RSI 15m: {analysis['rsi_15m']:.1f}{rsi_1h_info}{sma_info}{orderbook_info}"
+        )
+
     def run_live(self):
         """실거래 실행"""
         if not self.api:
@@ -721,42 +850,15 @@ class UnifiedTrader:
                     time.sleep(self.check_interval)
                     continue
                 
-                # 포지션 보유 중이면 수익률 표시
-                position_info = ""
-                if self.position:
-                    current_price = analysis['current_price']
-                    entry_price = self.position['entry_price']
-                    profit_rate = (current_price - entry_price) / entry_price * 100
-                    profit_emoji = "📈" if profit_rate > 0 else "📉"
-                    holding_time = (timestamp - self.position['entry_time']).total_seconds() / 60
-                    position_info = f" | {profit_emoji} {profit_rate:+.2f}% (평단 ₩{entry_price:,.0f}) | 보유 {holding_time:.0f}분"
+                # 전략별 로그 표시
+                strategy_type = self.strategy.config.get('strategy_type', 'scalping')
 
-                # 이동평균선 정보
-                sma_info = ""
-                if 'sma_7' in analysis and 'sma_25' in analysis:
-                    sma_7 = analysis['sma_7']
-                    sma_25 = analysis['sma_25']
-                    price_vs_sma7 = (analysis['current_price'] - sma_7) / sma_7 * 100
-                    price_vs_sma25 = (analysis['current_price'] - sma_25) / sma_25 * 100
-                    sma_info = f" | SMA7 {price_vs_sma7:+.1f}% | SMA25 {price_vs_sma25:+.1f}%"
-
-                # 1시간봉 RSI 정보
-                rsi_1h_info = ""
-                if 'rsi_1h' in analysis:
-                    rsi_1h_info = f" | RSI 1h: {analysis['rsi_1h']:.1f}"
-
-                # 호가 비율 정보
-                orderbook_info = ""
-                if 'bid_ask_ratio' in analysis:
-                    ratio = analysis['bid_ask_ratio']
-                    ratio_emoji = "🔵" if ratio > 1.0 else "🔴"
-                    orderbook_info = f" | {ratio_emoji} 호가 {ratio:.2f}"
-
-                self.log(
-                    f"📊 ₩{analysis['current_price']:,.0f}{position_info} | "
-                    f"RSI 5m: {analysis['rsi_5m']:.1f} | "
-                    f"RSI 15m: {analysis['rsi_15m']:.1f}{rsi_1h_info}{sma_info}{orderbook_info}"
-                )
+                if strategy_type == 'grid_trading':
+                    # 그리드 트레이딩 전용 로그
+                    self._log_grid_trading(analysis, timestamp)
+                else:
+                    # 기존 RSI 스캘핑 등 다른 전략용 로그
+                    self._log_scalping(analysis, timestamp)
                 
                 # 포지션 보유 중
                 if self.position:

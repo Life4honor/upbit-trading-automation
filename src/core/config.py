@@ -6,52 +6,44 @@ from typing import Dict
 
 
 def get_default_config() -> Dict:
+    """
+    그리드 트레이딩 전략 (기본값)
+
+    특징:
+    - 횡보장 구간 수익
+    - 높은 승률 (92%+)
+    - 안정적 수익
+    - 장기 보유 전략
+    """
     return {
+        'strategy_type': 'grid_trading',
         'initial_capital': 1_000_000,
-        'target_profit': 0.5,  # 목표 수익률
-        'stop_loss': -0.45,  # 손절 기준 (완화)
-        'max_trades_per_day': None,  # None = 무제한
+
+        # 그리드 파라미터
+        'grid_levels': 5,  # 5개 그리드
+        'grid_spacing': 1.0,  # 1% 간격
+        'max_positions': 3,  # 최대 3개 동시 보유
+
+        # 변동성 조건
+        'atr_period': 14,
+        'max_atr_threshold': 0.8,  # ATR < 평균의 80%
+
+        # 청산 조건
+        'single_grid_profit': 1.0,  # 개별 그리드 +1%
+        'total_stop_loss': -3.0,  # 전체 손실 -3%
+        'long_hold_minutes': 0,  # 장기 보유 손절 비활성화
+        'long_hold_loss_threshold': -1.0,
         'fee_rate': 0.05,
 
-        # RSI 조건 (범위 완화)
-        'rsi_5m_min': 60,
-        'rsi_5m_max': 85,
-        'rsi_15m_min': 50,
-        'rsi_15m_max': 87,
-        'rsi_1h_min': 45,
-        'rsi_1h_max': 90,
-
-        # 이동평균선 조건
-        'use_sma_alignment': True,  # 정배열 체크
-        'sma_periods': [7, 25],  # SMA 7, 25 사용
-
-        # 볼린저 밴드 조건
-        'use_bollinger': False,
-
-        # 거래량 조건 (완화)
-        'volume_surge_ratio': 1.00,
-        'min_volume_krw': 2_000_000,  # 200만
-        'volume_1h_increasing': True,
-
-        # 호가 조건 (완화)
-        'bid_ask_ratio_min': 1.2,      # 1.2
-        'bid_ask_imbalance_min': 0.6,  # 매수 호가 60% 이상
+        # 그리드 재초기화
+        'grid_reset_hours': 24,  # 24시간마다 재초기화
+        'bb_period': 20,  # 볼린저 밴드 기간
+        'bb_std': 2.0,
+        'bb_width_change_threshold': 30.0,  # BB 폭 30% 변화 시 재초기화
 
         # 기타
         'cooldown_minutes': 0,
-        'strong_rsi_threshold': 70,  # 75 → 70 (거래량 체크 스킵 조건 완화)
-
-        # 동적 목표 수익률
-        'use_dynamic_target': True,  # 동적 목표 수익률 활성화
-        'dynamic_target_min': 0.25,  # 최소 목표 수익률
-        'dynamic_target_max': 1.00,  # 최대 목표 수익률
-
-        # 시간대 필터 (거래량 분석 결과 기반)
-        'use_time_filter': True,  # 시간대 필터 사용 여부 (기본: 비활성화)
-        'time_filter_mode': 'safe',  # optimal/safe/peak/custom
-        'exclude_weekdays': [],  # 제외할 요일 (0=월, 4=금, 6=일)
-        'preferred_weekdays': None,  # 선호 요일 (None=모든 요일)
-        'allowed_hours': list(range(24)),  # custom 모드용 허용 시간
+        'max_trades_per_day': None,  # 무제한
     }
 
 

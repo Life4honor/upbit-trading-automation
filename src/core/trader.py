@@ -247,9 +247,14 @@ class UnifiedTrader:
             rsi_15m = self.strategy.calculate_rsi(data_15m['close'])
             sma_7 = self.strategy.calculate_sma(data_5m['close'], 7)
             sma_25 = self.strategy.calculate_sma(data_5m['close'], 25)
+            sma_99 = self.strategy.calculate_sma(data_5m['close'], 99)
 
             # 거래량 평균
             volume_ma = data_5m['volume'].tail(20).mean() if len(data_5m) >= 20 else 0
+
+            # 볼린저 밴드 계산
+            bb_upper, bb_middle, bb_lower = self.strategy.calculate_bollinger_bands(data_5m['close'], 20, 2.0)
+            bb_width = self.strategy.calculate_bb_width(data_5m['close'], 20, 2.0)
 
             # 호가 비율 (매수세/매도세)
             try:
@@ -269,6 +274,11 @@ class UnifiedTrader:
                 'rsi_15m': rsi_15m,
                 'sma_7': sma_7,
                 'sma_25': sma_25,
+                'sma_99': sma_99,
+                'bb_upper': bb_upper,
+                'bb_middle': bb_middle,
+                'bb_lower': bb_lower,
+                'bb_width': bb_width,
                 'latest_candle': data_5m.iloc[-1],
                 'volume_ma': volume_ma
             }
@@ -399,7 +409,7 @@ class UnifiedTrader:
                 self.last_trade_time = timestamp
 
                 target_info = f"목표: {dynamic_target:.2f}%" if self.strategy.use_dynamic_target else ""
-                self.log(f"✅ 매수 완료: ₩{self.trade_amount:,.0f} {target_info}")
+                self.log(f"✅ 매수: ₩{analysis['current_price']:,.0f} (금액: ₩{self.trade_amount:,.0f}) {target_info}")
                 return True
 
             return False
@@ -545,7 +555,7 @@ class UnifiedTrader:
                 self.position = None
                 self.last_trade_time = timestamp
 
-                self.log(f"✅ 매도: {profit_rate:+.2f}% (₩{profit_amount:+,.0f})")
+                self.log(f"✅ 매도: ₩{exit_price:,.0f} | {profit_rate:+.2f}% (₩{profit_amount:+,.0f}) | {reason}")
                 return True
 
             return False
@@ -703,10 +713,41 @@ class UnifiedTrader:
                     time.sleep(self.check_interval)
                     continue
                 
+                # 포지션 보유 중이면 수익률 표시
+                position_info = ""
+                if self.position:
+                    current_price = analysis['current_price']
+                    entry_price = self.position['entry_price']
+                    profit_rate = (current_price - entry_price) / entry_price * 100
+                    profit_emoji = "📈" if profit_rate > 0 else "📉"
+                    holding_time = (timestamp - self.position['entry_time']).total_seconds() / 60
+                    position_info = f" | {profit_emoji} {profit_rate:+.2f}% (평단 ₩{entry_price:,.0f}) | 보유 {holding_time:.0f}분"
+
+                # 이동평균선 정보
+                sma_info = ""
+                if 'sma_7' in analysis and 'sma_25' in analysis:
+                    sma_7 = analysis['sma_7']
+                    sma_25 = analysis['sma_25']
+                    price_vs_sma7 = (analysis['current_price'] - sma_7) / sma_7 * 100
+                    price_vs_sma25 = (analysis['current_price'] - sma_25) / sma_25 * 100
+                    sma_info = f" | SMA7 {price_vs_sma7:+.1f}% | SMA25 {price_vs_sma25:+.1f}%"
+
+                # 1시간봉 RSI 정보
+                rsi_1h_info = ""
+                if 'rsi_1h' in analysis:
+                    rsi_1h_info = f" | RSI 1h: {analysis['rsi_1h']:.1f}"
+
+                # 호가 비율 정보
+                orderbook_info = ""
+                if 'bid_ask_ratio' in analysis:
+                    ratio = analysis['bid_ask_ratio']
+                    ratio_emoji = "🔵" if ratio > 1.0 else "🔴"
+                    orderbook_info = f" | {ratio_emoji} 호가 {ratio:.2f}"
+
                 self.log(
-                    f"📊 ₩{analysis['current_price']:,.0f} | "
+                    f"📊 ₩{analysis['current_price']:,.0f}{position_info} | "
                     f"RSI 5m: {analysis['rsi_5m']:.1f} | "
-                    f"RSI 15m: {analysis['rsi_15m']:.1f}"
+                    f"RSI 15m: {analysis['rsi_15m']:.1f}{rsi_1h_info}{sma_info}{orderbook_info}"
                 )
                 
                 # 포지션 보유 중
@@ -740,19 +781,31 @@ class UnifiedTrader:
     def stop(self):
         """자동매매 중지"""
         self.is_running = False
-        
+
         if self.position:
             self.log("⚠️ 포지션이 남아있습니다. 수동 정리 필요")
-        
+
         self.log("=" * 60)
         self.log("🛑 종료")
         self.log(f"거래: {len(self.trades)}회 (오늘: {self.today_trade_count}회)")
-        
-        # 결과 저장
+
+        # 결과 저장 및 요약 출력
         if self.trades:
             results = self.analyze_results()
+
+            # 결과 요약 (백테스트와 동일한 형식)
+            self.log("=" * 60)
+            self.log("📊 실거래 결과 요약")
+            self.log("=" * 60)
+            self.log(f"승률: {results['win_rate']:.1f}%")
+            self.log(f"수익률: {results['total_profit_rate']:+.2f}%")
+            self.log(f"거래: {results['total_trades']}회")
+            self.log(f"MDD: {results['max_drawdown']:.2f}%")
+            self.log(f"샤프: {results['sharpe_ratio']:.2f}")
+            self.log("=" * 60)
+
             self.save_results(results)
-        
+
         self.log("=" * 60)
     
     # ==========================================

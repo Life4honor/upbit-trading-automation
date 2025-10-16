@@ -42,6 +42,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --coin)
             COIN_FILTER="$2"
+            # KRW- 프리픽스 자동 제거 (KRW-BTC -> BTC)
+            if [[ "$COIN_FILTER" == KRW-* ]]; then
+                COIN_FILTER="${COIN_FILTER#KRW-}"
+            fi
             shift 2
             ;;
         --help|-h)
@@ -51,18 +55,20 @@ while [[ $# -gt 0 ]]; do
             echo "  --backup           백업 후 정리"
             echo "  --force            확인 없이 바로 삭제"
             echo "  --all              백테스트 결과 + 로그 모두 정리"
-            echo "  --coin <COIN>      특정 코인만 정리 (예: BTC, ETH)"
+            echo "  --coin <COIN>      특정 코인만 정리 (예: BTC, KRW-BTC, ETH, KRW-ETH)"
             echo "  --coin all         모든 코인 정리"
             echo "  --help             도움말 표시"
             echo ""
             echo "예시:"
-            echo "  $0                       # 백테스트 결과만 정리 (확인 메시지)"
-            echo "  $0 --backup              # 백업 후 정리"
-            echo "  $0 --force               # 확인 없이 삭제"
-            echo "  $0 --all --force         # 모두 확인 없이 삭제"
-            echo "  $0 --coin BTC            # BTC만 정리"
-            echo "  $0 --coin ETH --force    # ETH만 확인 없이 삭제"
-            echo "  $0 --coin all            # 모든 코인 정리"
+            echo "  $0                          # 백테스트 결과만 정리 (확인 메시지)"
+            echo "  $0 --backup                 # 백업 후 정리"
+            echo "  $0 --force                  # 확인 없이 삭제"
+            echo "  $0 --all --force            # 모두 확인 없이 삭제"
+            echo "  $0 --coin BTC               # BTC만 정리"
+            echo "  $0 --coin KRW-BTC           # BTC만 정리 (KRW- 자동 제거)"
+            echo "  $0 --coin ETH --force       # ETH만 확인 없이 삭제"
+            echo "  $0 --coin KRW-ETH --force   # ETH만 확인 없이 삭제"
+            echo "  $0 --coin all               # 모든 코인 정리"
             exit 0
             ;;
         *)

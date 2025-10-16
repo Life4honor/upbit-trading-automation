@@ -16,9 +16,12 @@ config/api_keys.json
 
 # 백테스트 결과
 backtest_reports/
-*.json
-*.csv
-*.md
+backtest_reports/**/*.json
+backtest_reports/**/*.csv
+backtest_reports/**/*.md
+logs/**/*.json
+logs/**/*.csv
+logs/**/*.md
 
 # 실거래 로그
 logs/

@@ -83,7 +83,8 @@ class UnifiedTrader:
         # 자본
         self.initial_capital = config.get('initial_capital', 1000000)
         self.capital = self.initial_capital
-        self.trade_amount = config.get('trade_amount', 100000)
+        # trade_amount: config에서 지정하거나, 초기 자본의 80%로 자동 계산
+        self.trade_amount = config.get('trade_amount', int(self.initial_capital * 0.80))
         
         # 상태
         self.position = None
@@ -320,7 +321,8 @@ class UnifiedTrader:
         if self.mode == 'backtest':
             # 시뮬레이션 매수
             entry_price = analysis['current_price']
-            amount = min(self.capital * 0.99, self.trade_amount)
+            # trade_amount를 일관되게 사용 (초기 자본의 80%)
+            amount = min(self.capital, self.trade_amount)
             fee = amount * (self.fee_rate / 100)
 
             # 동적 목표 수익률 계산 (전략이 지원하는 경우만)

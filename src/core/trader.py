@@ -11,8 +11,44 @@ from pathlib import Path
 import time
 import requests
 
-from .strategy import ScalpingStrategy
 from .api import UpbitAPI
+from .base_strategy import BaseStrategy
+from .strategies import (
+    ScalpingStrategy,
+    MomentumBreakoutStrategy,
+    GridTradingStrategy,
+    VolatilityBreakoutStrategy,
+    BollingerReversalStrategy,
+)
+
+
+def create_strategy(config: Dict) -> BaseStrategy:
+    """
+    전략 팩토리: config의 strategy_type에 따라 전략 인스턴스 생성
+
+    Args:
+        config: 전략 설정 (strategy_type 포함)
+
+    Returns:
+        전략 인스턴스
+
+    Raises:
+        ValueError: 알 수 없는 전략 타입
+    """
+    strategy_type = config.get('strategy_type', 'scalping')
+
+    strategy_map = {
+        'scalping': ScalpingStrategy,
+        'momentum_breakout': MomentumBreakoutStrategy,
+        'grid_trading': GridTradingStrategy,
+        'volatility_breakout': VolatilityBreakoutStrategy,
+        'bollinger_reversal': BollingerReversalStrategy,
+    }
+
+    if strategy_type not in strategy_map:
+        raise ValueError(f"알 수 없는 전략 타입: {strategy_type}")
+
+    return strategy_map[strategy_type](config)
 
 
 class UnifiedTrader:
@@ -21,14 +57,14 @@ class UnifiedTrader:
     - 백테스트: 과거 데이터로 시뮬레이션
     - 실거래: 실시간 자동매매
     """
-    
+
     BASE_URL = "https://api.upbit.com/v1"
-    
-    def __init__(self, config: Dict, market: str, mode: str = 'backtest', 
+
+    def __init__(self, config: Dict, market: str, mode: str = 'backtest',
                  api: Optional[UpbitAPI] = None):
         """
         초기화
-        
+
         Args:
             config: 전략 설정
             market: 마켓 코드 (예: 'KRW-BTC')
@@ -40,9 +76,9 @@ class UnifiedTrader:
         self.mode = mode
         self.api = api
         self.currency = market.split('-')[1]
-        
-        # 전략
-        self.strategy = ScalpingStrategy(config)
+
+        # 전략 (팩토리 패턴)
+        self.strategy = create_strategy(config)
         
         # 자본
         self.initial_capital = config.get('initial_capital', 1000000)

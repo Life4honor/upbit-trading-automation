@@ -94,8 +94,8 @@ def parse_args():
     parser.add_argument(
         '--interval',
         type=int,
-        default=10,
-        help='체크 주기 (초) (기본: 60)'
+        default=5,
+        help='체크 주기 (초) (기본: 5)'
     )
     
     # 커스텀 설정

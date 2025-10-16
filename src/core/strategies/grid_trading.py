@@ -119,9 +119,17 @@ class GridTradingStrategy(BaseStrategy):
             if atr_ratio > self.max_atr_threshold:
                 return False, f"변동성 너무 높음 (ATR 비율: {atr_ratio:.2f})"
 
-        # 3. 그리드 초기화 (첫 진입 시)
+        # 3. 그리드 초기화 (첫 진입 시 또는 그리드 범위 벗어났을 때)
         if not self.grid_prices:
             self.initialize_grid(current_price)
+        else:
+            # 현재가가 그리드 범위를 벗어났는지 확인 (±10% 이상 차이)
+            min_grid = min(self.grid_prices)
+            max_grid = max(self.grid_prices)
+
+            if current_price < min_grid * 0.9 or current_price > max_grid * 1.1:
+                # 그리드 범위 벗어남 -> 재초기화
+                self.initialize_grid(current_price)
 
         # 4. 그리드 하단 도달 체크
         # 현재가가 그리드 레벨 근처인지 확인 (±0.2% 허용)

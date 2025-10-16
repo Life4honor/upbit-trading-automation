@@ -57,30 +57,87 @@ def get_default_config() -> Dict:
 
 
 def print_config(config: Dict):
-    """설정 출력"""
-    print("⚙️ 백테스트 설정")
+    """설정 출력 (전략별 동적 출력)"""
+    strategy_type = config.get('strategy_type', 'scalping')
+
+    # 전략명 매핑
+    strategy_names = {
+        'scalping': 'RSI 스캘핑',
+        'momentum_breakout': '모멘텀 브레이크아웃',
+        'grid_trading': '그리드 트레이딩',
+        'volatility_breakout': '변동성 브레이크아웃',
+        'bollinger_reversal': '볼린저밴드 리버설',
+    }
+    strategy_name = strategy_names.get(strategy_type, strategy_type)
+
+    print(f"⚙️ 전략: {strategy_name}")
     print("=" * 40)
     print(f"초기 자본: ₩{config['initial_capital']:,}")
-    print(f"목표 수익: +{config['target_profit']}%")
-    print(f"손절: {config['stop_loss']}%")
-    max_trades = config['max_trades_per_day']
-    print(f"일 최대 거래: {'무제한' if max_trades is None else f'{max_trades}회'}")
-    print(f"수수료: {config['fee_rate']}%")
-    print(f"RSI 5분: {config['rsi_5m_min']}-{config['rsi_5m_max']}")
-    print(f"RSI 15분: {config['rsi_15m_min']}-{config['rsi_15m_max']}")
-    print(f"RSI 1시간: {config['rsi_1h_min']}-{config['rsi_1h_max']}")
-    cooldown = config['cooldown_minutes']
+
+    # 공통 파라미터
+    if 'target_profit' in config:
+        print(f"목표 수익: +{config['target_profit']}%")
+    if 'stop_loss' in config:
+        print(f"손절: {config['stop_loss']}%")
+
+    max_trades = config.get('max_trades_per_day')
+    if max_trades is not None:
+        print(f"일 최대 거래: {'무제한' if max_trades is None else f'{max_trades}회'}")
+
+    print(f"수수료: {config.get('fee_rate', 0.05)}%")
+
+    # 전략별 주요 파라미터
+    print("\n주요 파라미터:")
+
+    if strategy_type == 'scalping':
+        # RSI 스캘핑 전용
+        if 'rsi_5m_min' in config:
+            print(f"  RSI 5분: {config['rsi_5m_min']}-{config['rsi_5m_max']}")
+        if 'rsi_15m_min' in config:
+            print(f"  RSI 15분: {config['rsi_15m_min']}-{config['rsi_15m_max']}")
+        if 'rsi_1h_min' in config:
+            print(f"  RSI 1시간: {config['rsi_1h_min']}-{config['rsi_1h_max']}")
+        if 'volume_surge_ratio' in config:
+            print(f"  거래량 배율: {config['volume_surge_ratio']}x")
+        if 'bid_ask_ratio_min' in config:
+            print(f"  호가 비율: {config['bid_ask_ratio_min']}+")
+
+    elif strategy_type == 'momentum_breakout':
+        print(f"  고점 기간: {config.get('lookback_period', 20)}일")
+        print(f"  거래량 임계값: {config.get('volume_threshold', 1.5)}x")
+        print(f"  RSI 최소: {config.get('rsi_min', 50)}")
+        print(f"  트레일링 스톱: -{config.get('trailing_stop_pct', 2.0)}%")
+
+    elif strategy_type == 'grid_trading':
+        print(f"  그리드 레벨: {config.get('grid_levels', 5)}개")
+        print(f"  그리드 간격: {config.get('grid_spacing', 1.0)}%")
+        print(f"  최대 포지션: {config.get('max_positions', 3)}개")
+        print(f"  개별 그리드 익절: +{config.get('single_grid_profit', 1.0)}%")
+        print(f"  전체 손절: {config.get('total_stop_loss', -3.0)}%")
+
+    elif strategy_type == 'volatility_breakout':
+        print(f"  ATR 기간: {config.get('atr_period', 14)}")
+        print(f"  ATR 배수: {config.get('atr_multiplier', 1.5)}x")
+        print(f"  익절 ATR 배수: {config.get('target_atr_multiple', 2.0)}x")
+        print(f"  손절 ATR 배수: {config.get('stop_atr_multiple', 1.0)}x")
+        print(f"  최소 ATR: ₩{config.get('min_atr_krw', 10000):,}")
+
+    elif strategy_type == 'bollinger_reversal':
+        print(f"  BB 기간: {config.get('bb_period', 20)}")
+        print(f"  BB 표준편차: {config.get('bb_std', 2.0)}")
+        print(f"  RSI 과매도: {config.get('rsi_oversold', 30)}")
+        print(f"  RSI 과매수: {config.get('rsi_overbought', 70)}")
+        print(f"  시간 손절: {config.get('time_stop_minutes', 60)}분")
+
+    # 쿨타임
+    cooldown = config.get('cooldown_minutes', 0)
     if cooldown == 0:
-        print(f"쿨타임: 없음 (즉시 재진입)")
+        print(f"  쿨타임: 없음 (즉시 재진입)")
     elif cooldown >= 1:
-        print(f"쿨타임: {cooldown}분")
+        print(f"  쿨타임: {cooldown}분")
     else:
-        print(f"쿨타임: {int(cooldown * 60)}초")
-    print(f"거래량 배율: {config.get('volume_surge_ratio', 'N/A')}x")
-    print(f"호가 비율: {config.get('bid_ask_ratio_min', 'N/A')}+")
-    bid_imbalance = config.get('bid_ask_imbalance_min', None)
-    if bid_imbalance:
-        print(f"호가 불균형: {bid_imbalance:.1%}+ (매수 호가 비중)")
+        print(f"  쿨타임: {int(cooldown * 60)}초")
+
     print("=" * 40)
 
 

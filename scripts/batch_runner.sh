@@ -30,7 +30,7 @@ MARKETS=("KRW-BTC" "KRW-ETH")
 STRATEGIES=("default" "momentum-breakout" "grid-trading" "volatility-breakout" "bollinger-reversal")
 
 # 최대 동시 실행 수
-MAX_PARALLEL=4
+MAX_PARALLEL=10
 
 # ==========================================
 # 모드별 파라미터 처리

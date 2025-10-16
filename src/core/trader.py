@@ -323,8 +323,10 @@ class UnifiedTrader:
             amount = min(self.capital * 0.99, self.trade_amount)
             fee = amount * (self.fee_rate / 100)
 
-            # 동적 목표 수익률 계산
-            dynamic_target = self.strategy.calculate_dynamic_target(analysis)
+            # 동적 목표 수익률 계산 (전략이 지원하는 경우만)
+            dynamic_target = None
+            if hasattr(self.strategy, 'calculate_dynamic_target'):
+                dynamic_target = self.strategy.calculate_dynamic_target(analysis)
 
             # 호가 데이터 계산
             bid_ask_ratio = analysis.get('bid_ask_ratio')
@@ -358,7 +360,7 @@ class UnifiedTrader:
             self.today_trade_count += 1
             self.last_trade_time = timestamp
 
-            target_info = f"목표: {dynamic_target:.2f}%" if self.strategy.use_dynamic_target else ""
+            target_info = f"목표: {dynamic_target:.2f}%" if dynamic_target is not None else ""
             self.log(f"✅ 매수: ₩{entry_price:,.0f} (수량: {self.position['quantity']:.8f}) {target_info}")
             return True
 
@@ -375,8 +377,10 @@ class UnifiedTrader:
             result = self.api.buy_market(self.market, self.trade_amount)
 
             if result:
-                # 동적 목표 수익률 계산
-                dynamic_target = self.strategy.calculate_dynamic_target(analysis)
+                # 동적 목표 수익률 계산 (전략이 지원하는 경우만)
+                dynamic_target = None
+                if hasattr(self.strategy, 'calculate_dynamic_target'):
+                    dynamic_target = self.strategy.calculate_dynamic_target(analysis)
 
                 # 호가 데이터 계산
                 bid_ask_ratio = analysis.get('bid_ask_ratio')
@@ -408,7 +412,7 @@ class UnifiedTrader:
                 self.today_trade_count += 1
                 self.last_trade_time = timestamp
 
-                target_info = f"목표: {dynamic_target:.2f}%" if self.strategy.use_dynamic_target else ""
+                target_info = f"목표: {dynamic_target:.2f}%" if dynamic_target is not None else ""
                 self.log(f"✅ 매수: ₩{analysis['current_price']:,.0f} (금액: ₩{self.trade_amount:,.0f}) {target_info}")
                 return True
 

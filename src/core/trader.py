@@ -213,6 +213,7 @@ class UnifiedTrader:
 
             result = {
                 'current_price': current_price,
+                'timestamp': data_5m.index[-1],  # 현재 시각 추가 (그리드 재초기화용)
                 'rsi_5m': rsi_5m,
                 'rsi_15m': rsi_15m,
                 'sma_7': sma_7,
@@ -271,6 +272,7 @@ class UnifiedTrader:
 
             result = {
                 'current_price': current_price,
+                'timestamp': datetime.now(),  # 현재 시각 추가 (그리드 재초기화용)
                 'rsi_5m': rsi_5m,
                 'rsi_15m': rsi_15m,
                 'sma_7': sma_7,

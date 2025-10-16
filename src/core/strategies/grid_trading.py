@@ -52,19 +52,29 @@ class GridTradingStrategy(BaseStrategy):
         self.long_hold_minutes = config.get('long_hold_minutes', 480)  # 장기 보유 시간 (분, 기본 8시간)
         self.long_hold_loss_threshold = config.get('long_hold_loss_threshold', -1.0)  # 장기 보유 손절 임계값 (%)
 
+        # 그리드 재초기화 파라미터
+        self.grid_reset_hours = config.get('grid_reset_hours', 24)  # 주기적 재초기화 (시간, 0이면 비활성화)
+        self.bb_period = config.get('bb_period', 20)  # 볼린저 밴드 기간
+        self.bb_std = config.get('bb_std', 2.0)  # 볼린저 밴드 표준편차
+        self.bb_width_change_threshold = config.get('bb_width_change_threshold', 30.0)  # 밴드폭 변화율 임계값 (%)
+
         # 그리드 상태 (런타임)
         self.grid_prices = []  # 그리드 가격 레벨
         self.base_price = None  # 그리드 기준 가격
+        self.grid_initialized_at = None  # 그리드 초기화 시각
+        self.last_bb_width = None  # 이전 볼린저 밴드 폭
 
-    def initialize_grid(self, current_price: float):
+    def initialize_grid(self, current_price: float, timestamp: datetime = None):
         """
         그리드 가격 레벨 초기화
 
         Args:
             current_price: 현재가
+            timestamp: 초기화 시각 (None이면 현재 시각)
         """
         self.base_price = current_price
         self.grid_prices = []
+        self.grid_initialized_at = timestamp or datetime.now()
 
         # 현재가 기준으로 위아래로 그리드 생성
         for i in range(-(self.grid_levels // 2), (self.grid_levels // 2) + 1):
@@ -90,6 +100,55 @@ class GridTradingStrategy(BaseStrategy):
                          key=lambda i: abs(self.grid_prices[i] - price))
         return nearest_idx, self.grid_prices[nearest_idx]
 
+    def should_reset_grid(self, market_data: Dict) -> Tuple[bool, str]:
+        """
+        그리드 재초기화 여부 판단
+
+        Args:
+            market_data: 시장 데이터
+
+        Returns:
+            (재초기화 필요 여부, 사유)
+        """
+        current_price = market_data['current_price']
+        current_time = market_data.get('timestamp')
+
+        # 1. 첫 진입 - 항상 초기화
+        if not self.grid_prices:
+            return True, "첫 그리드 초기화"
+
+        # 2. 주기적 재초기화 체크 (설정된 경우)
+        if self.grid_reset_hours > 0 and self.grid_initialized_at and current_time:
+            hours_since_init = (current_time - self.grid_initialized_at).total_seconds() / 3600
+            if hours_since_init >= self.grid_reset_hours:
+                return True, f"주기적 재초기화 ({hours_since_init:.1f}시간 경과)"
+
+        # 3. 볼린저 밴드 폭 변화 체크
+        bb_upper = market_data.get('bb_upper')
+        bb_lower = market_data.get('bb_lower')
+
+        if bb_upper and bb_lower:
+            current_bb_width = (bb_upper - bb_lower) / current_price * 100  # 현재가 대비 밴드폭 (%)
+
+            if self.last_bb_width is not None:
+                # 밴드폭 변화율 계산
+                width_change_pct = abs(current_bb_width - self.last_bb_width) / self.last_bb_width * 100
+
+                if width_change_pct >= self.bb_width_change_threshold:
+                    self.last_bb_width = current_bb_width
+                    return True, f"볼린저 밴드폭 급변 ({width_change_pct:.1f}% 변화)"
+
+            self.last_bb_width = current_bb_width
+
+        # 4. 가격 이탈 체크 (기존 로직 - 더 넓게 완화)
+        min_grid = min(self.grid_prices)
+        max_grid = max(self.grid_prices)
+
+        if current_price < min_grid * 0.85 or current_price > max_grid * 1.15:
+            return True, f"가격 이탈 (그리드: ₩{min_grid:,.0f}~₩{max_grid:,.0f})"
+
+        return False, ""
+
     def check_entry_conditions(self, market_data: Dict) -> Tuple[bool, str]:
         """
         매수 조건 체크
@@ -97,10 +156,13 @@ class GridTradingStrategy(BaseStrategy):
         Args:
             market_data: 시장 데이터
                 - current_price: 현재가
+                - timestamp: 현재 시각
                 - atr: ATR 값
                 - atr_ma: ATR 평균
                 - volatility: 변동성
                 - active_positions: 현재 보유 중인 포지션 수
+                - bb_upper: 볼린저 밴드 상단
+                - bb_lower: 볼린저 밴드 하단
 
         Returns:
             (진입 가능 여부, 사유)
@@ -121,17 +183,11 @@ class GridTradingStrategy(BaseStrategy):
             if atr_ratio > self.max_atr_threshold:
                 return False, f"변동성 너무 높음 (ATR 비율: {atr_ratio:.2f})"
 
-        # 3. 그리드 초기화 (첫 진입 시 또는 그리드 범위 벗어났을 때)
-        if not self.grid_prices:
-            self.initialize_grid(current_price)
-        else:
-            # 현재가가 그리드 범위를 벗어났는지 확인 (±10% 이상 차이)
-            min_grid = min(self.grid_prices)
-            max_grid = max(self.grid_prices)
-
-            if current_price < min_grid * 0.9 or current_price > max_grid * 1.1:
-                # 그리드 범위 벗어남 -> 재초기화
-                self.initialize_grid(current_price)
+        # 3. 그리드 재초기화 체크
+        should_reset, reset_reason = self.should_reset_grid(market_data)
+        if should_reset:
+            timestamp = market_data.get('timestamp')
+            self.initialize_grid(current_price, timestamp)
 
         # 4. 그리드 하단 도달 체크
         # 현재가가 그리드 레벨 근처인지 확인 (±0.2% 허용)

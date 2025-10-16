@@ -116,6 +116,15 @@ def print_config(config: Dict):
         print(f"  전체 손절: {config.get('total_stop_loss', -3.0)}%")
         print(f"  장기 보유 손절: {config.get('long_hold_minutes', 480)}분 (-{abs(config.get('long_hold_loss_threshold', -1.0))}% 이상)")
 
+        # 그리드 재초기화 설정
+        reset_hours = config.get('grid_reset_hours', 24)
+        if reset_hours > 0:
+            print(f"  주기적 재초기화: {reset_hours}시간")
+        else:
+            print(f"  주기적 재초기화: 비활성화")
+        print(f"  볼린저 밴드 기간: {config.get('bb_period', 20)}")
+        print(f"  BB 폭 변화 임계값: {config.get('bb_width_change_threshold', 30.0)}%")
+
     elif strategy_type == 'volatility_breakout':
         print(f"  ATR 기간: {config.get('atr_period', 14)}")
         print(f"  ATR 배수: {config.get('atr_multiplier', 1.5)}x")

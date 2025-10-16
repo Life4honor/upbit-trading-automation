@@ -22,6 +22,11 @@ backtest_reports/
 
 # 실거래 로그
 logs/
+
+# 배치 실행 로그
+batch_logs/
+
+# 로그 파일
 *.log
 
 # IDE

@@ -88,7 +88,12 @@ run_backtest() {
     local market=$1
     local preset=$2
     local days=$3
-    local log_file="logs/batch_${market}_${preset}_${days}d_$(date +%Y%m%d_%H%M%S).log"
+
+    # 배치 실행 로그를 날짜별로 정리
+    local date_path=$(date +%Y/%m/%d)
+    local log_dir="batch_logs/${date_path}"
+    mkdir -p "$log_dir"
+    local log_file="${log_dir}/batch_${market}_${preset}_${days}d_$(date +%Y%m%d_%H%M%S).log"
 
     echo "🔄 [백테스트] $market - $preset (${days}일) 시작..."
 
@@ -169,8 +174,8 @@ print_comparison_summary() {
     echo "─────────────────────────────────────────────────────────────"
 
     for strategy in "${STRATEGIES[@]}"; do
-        # 최신 로그 파일 찾기
-        local latest_log=$(ls -t logs/batch_*_${strategy}_${days}d_*.log 2>/dev/null | head -1)
+        # 최신 로그 파일 찾기 (날짜별 디렉토리 탐색)
+        local latest_log=$(find batch_logs -name "batch_*_${strategy}_${days}d_*.log" 2>/dev/null | sort -r | head -1)
 
         if [ -f "$latest_log" ]; then
             local win_rate=$(grep "승률:" "$latest_log" | awk '{print $2}' || echo "N/A")
@@ -191,8 +196,8 @@ print_comparison_summary() {
 # 메인 로직
 # ==========================================
 
-# 로그 디렉토리 생성
-mkdir -p logs
+# 배치 로그 디렉토리 생성 (날짜별)
+mkdir -p batch_logs/$(date +%Y/%m/%d)
 
 echo "════════════════════════════════════════"
 echo "🚀 배치 실행기"
@@ -360,17 +365,20 @@ echo ""
 
 if [ "$MODE" = "backtest" ] || [ "$MODE" = "compare" ]; then
     echo "📊 결과 확인:"
-    echo "  backtest_reports/ 디렉토리를 확인하세요"
-    echo ""
-    echo "📝 로그 확인:"
-    echo "  ls -lh logs/batch_*.log"
+    echo "  백테스트 결과: backtest_reports/{코인}/{날짜}/"
+    echo "  배치 로그: batch_logs/$(date +%Y/%m/%d)/"
     echo ""
 
     if [ "$MODE" = "compare" ]; then
         echo "💡 Tip:"
-        echo "  전략별 상세 결과는 backtest_reports/{코인}/{날짜}/ 에서 확인하세요"
+        echo "  전략별 상세 결과는 backtest_reports/{코인}/$(date +%Y/%m/%d)/ 에서 확인하세요"
         echo "  최고 성과 전략을 선택하여 실전 테스트를 진행하세요"
     fi
+    echo ""
+    echo "📝 주요 파일:"
+    echo "  - JSON: 프로그래밍 분석용"
+    echo "  - MD:   읽기 편한 리포트"
+    echo "  - CSV:  스프레드시트 분석용"
 fi
 
 echo "════════════════════════════════════════"

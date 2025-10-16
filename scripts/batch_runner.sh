@@ -265,7 +265,16 @@ if [ "$MODE" = "backtest" ] || [ "$MODE" = "compare" ]; then
     if [ -d "backtest_reports" ] && [ "$(ls -A backtest_reports 2>/dev/null)" ]; then
         echo "🗑️  기존 백테스트 결과 정리"
         echo ""
-        ./scripts/clean.sh
+
+        # 마켓이 단일로 지정된 경우 해당 마켓만 정리
+        if [ ${#MARKETS[@]} -eq 1 ]; then
+            # 단일 마켓인 경우 해당 코인만 정리
+            ./scripts/clean.sh --coin "${MARKETS[0]}"
+        else
+            # 여러 마켓인 경우 전체 정리
+            ./scripts/clean.sh
+        fi
+
         echo ""
     fi
 fi

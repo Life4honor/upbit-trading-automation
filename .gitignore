@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 가상환경
+.venv/
+venv/
+ENV/
+.uv/
+
+# API 키 (⚠️ 중요!)
+config/api_keys.json
+
+# 백테스트 결과
+backtest_reports/
+*.json
+*.csv
+*.md
+
+# 실거래 로그
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+.DS_Store?
+._*
+
+# 테스트
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# 빌드
+build/
+dist/
+*.egg-info/

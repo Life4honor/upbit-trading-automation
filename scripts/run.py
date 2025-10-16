@@ -4,13 +4,18 @@
 백테스트와 실거래를 하나의 명령어로
 
 사용법:
-    # 백테스트
+    # 백테스트 (기본 RSI 스캘핑)
     uv run scripts/run.py --backtest -m KRW-BTC --days 7
-    uv run scripts/run.py --backtest -m KRW-ETH --days 30
+
+    # 백테스트 (새로운 전략)
+    uv run scripts/run.py --backtest -m KRW-ETH -p momentum-breakout --days 30
+    uv run scripts/run.py --backtest -m KRW-SOL -p grid-trading --days 90
+    uv run scripts/run.py --backtest -m KRW-BTC -p volatility-breakout --days 60
+    uv run scripts/run.py --backtest -m KRW-ETH -p bollinger-reversal --days 30
 
     # 실거래 (⚠️ 주의: 실제 거래!)
     uv run scripts/run.py --live -m KRW-BTC -a 100000
-    uv run scripts/run.py --live -m KRW-ETH -a 50000
+    uv run scripts/run.py --live -m KRW-ETH -p bollinger-reversal -a 50000
 """
 
 import sys
@@ -33,16 +38,21 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 예시:
-  # 백테스트
+  # 백테스트 (기본 RSI 스캘핑)
   uv run scripts/run.py --backtest -m KRW-BTC --days 7
-  uv run scripts/run.py --backtest -m KRW-ETH --days 30
+
+  # 백테스트 (새로운 전략)
+  uv run scripts/run.py --backtest -m KRW-ETH -p momentum-breakout --days 30
+  uv run scripts/run.py --backtest -m KRW-SOL -p grid-trading --days 90
+  uv run scripts/run.py --backtest -m KRW-BTC -p volatility-breakout --days 60
+  uv run scripts/run.py --backtest -m KRW-ETH -p bollinger-reversal --days 30
 
   # 실거래 (⚠️ 주의: 실제 거래!)
   uv run scripts/run.py --live -m KRW-BTC -a 100000
-  uv run scripts/run.py --live -m KRW-ETH -a 50000
+  uv run scripts/run.py --live -m KRW-ETH -p bollinger-reversal -a 50000
 
   # Dry-run (설정만 확인)
-  uv run scripts/run.py --live -m KRW-BTC -a 100000 --dry-run
+  uv run scripts/run.py --live -m KRW-BTC -p grid-trading -a 100000 --dry-run
         """
     )
     
@@ -71,8 +81,20 @@ def parse_args():
         '-p', '--preset',
         type=str,
         default='default',
-        choices=['default', 'optimal-time', 'weekend', 'safe-hours', 'peak-only'],
-        help='전략 프리셋 (기본: default)'
+        choices=[
+            # 트레이딩 전략
+            'default',
+            'momentum-breakout',
+            'grid-trading',
+            'volatility-breakout',
+            'bollinger-reversal',
+            # 시간대 필터
+            'optimal-time',
+            'weekend',
+            'safe-hours',
+            'peak-only'
+        ],
+        help='전략 프리셋 (기본: default=RSI스캘핑)'
     )
     
     # 백테스트 옵션

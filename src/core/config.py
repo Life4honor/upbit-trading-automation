@@ -29,6 +29,7 @@ def get_default_config() -> Dict:
         'max_atr_threshold': 0.8,  # ATR < 평균의 80%
 
         # 청산 조건
+        'single_position_stop_loss': -1.5,  # 개별 포지션 손절 -1.5%
         'single_grid_profit': 1.0,  # 개별 그리드 +1%
         'total_stop_loss': -3.0,  # 전체 손실 -3%
         'long_hold_minutes': 0,  # 장기 보유 손절 비활성화
@@ -36,7 +37,7 @@ def get_default_config() -> Dict:
         'fee_rate': 0.05,
 
         # 그리드 재초기화
-        'grid_reset_hours': 24,  # 24시간마다 재초기화
+        'grid_reset_hours': 8,  # 8시간마다 재초기화
         'bb_period': 20,  # 볼린저 밴드 기간
         'bb_std': 2.0,
         'bb_width_change_threshold': 30.0,  # BB 폭 30% 변화 시 재초기화
@@ -104,6 +105,7 @@ def print_config(config: Dict):
         print(f"  그리드 레벨: {config.get('grid_levels', 5)}개")
         print(f"  그리드 간격: {config.get('grid_spacing', 1.0)}%")
         print(f"  최대 포지션: {config.get('max_positions', 3)}개")
+        print(f"  개별 포지션 손절: {config.get('single_position_stop_loss', -1.5)}%")
         print(f"  개별 그리드 익절: +{config.get('single_grid_profit', 1.0)}%")
         print(f"  전체 손절: {config.get('total_stop_loss', -3.0)}%")
 
@@ -209,9 +211,18 @@ def get_grid_trading_config() -> Dict:
         'max_atr_threshold': 0.8,  # ATR < 평균의 80%
 
         # 청산 조건
+        'single_position_stop_loss': -1.5,  # 개별 포지션 손절 -1.5%
         'single_grid_profit': 1.0,  # 개별 그리드 +1%
         'total_stop_loss': -3.0,  # 전체 손실 -3%
+        'long_hold_minutes': 0,  # 장기 보유 손절 비활성화
+        'long_hold_loss_threshold': -1.0,
         'fee_rate': 0.05,
+
+        # 그리드 재초기화
+        'grid_reset_hours': 8,  # 8시간마다 재초기화
+        'bb_period': 20,  # 볼린저 밴드 기간
+        'bb_std': 2.0,
+        'bb_width_change_threshold': 30.0,  # BB 폭 30% 변화 시 재초기화
 
         # 기타
         'cooldown_minutes': 0,
@@ -295,7 +306,7 @@ def get_bollinger_reversal_config() -> Dict:
 # 프리셋 맵핑
 PRESETS = {
     # 기존 RSI 스캘핑
-    'default': get_default_config,
+    'default': get_grid_trading_config,
 
     # 새로운 전략들
     'momentum-breakout': get_momentum_breakout_config,

@@ -24,6 +24,7 @@ class GridTradingStrategy(BaseStrategy):
     - 그리드 하단 도달 시 매수
 
     청산:
+    - 개별 포지션 손절 -1.5%
     - 그리드 상단 도달 시 매도
     - 총 손실 -3% 도달 시 전량 청산
     """
@@ -47,6 +48,7 @@ class GridTradingStrategy(BaseStrategy):
         self.max_atr_threshold = config.get('max_atr_threshold', 0.8)  # 평균 ATR 대비 최대 비율
 
         # 청산 파라미터
+        self.single_position_stop_loss = config.get('single_position_stop_loss', -1.5)  # 개별 포지션 손절 (%)
         self.total_stop_loss = config.get('total_stop_loss', -3.0)  # 총 손실 한도 (%)
         self.single_grid_profit = config.get('single_grid_profit', 1.0)  # 개별 그리드 수익률 (%)
         self.long_hold_minutes = config.get('long_hold_minutes', 0)  # 장기 보유 시간 (분, 0이면 비활성화)
@@ -229,16 +231,20 @@ class GridTradingStrategy(BaseStrategy):
         entry_price = position['entry_price']
         profit_rate = (current_price - entry_price) / entry_price * 100
 
-        # 1. 개별 그리드 목표 익절
+        # 1. 개별 포지션 손절 (최우선)
+        if profit_rate <= self.single_position_stop_loss:
+            return True, 'STOP_LOSS', f"개별 포지션 손절 ({profit_rate:.2f}%)"
+
+        # 2. 개별 그리드 목표 익절
         if profit_rate >= self.single_grid_profit:
             return True, 'TAKE_PROFIT', f"그리드 익절 (+{profit_rate:.2f}%)"
 
-        # 2. 총 손실 한도 (포트폴리오 전체)
+        # 3. 총 손실 한도 (포트폴리오 전체)
         total_profit_rate = market_data.get('total_profit_rate', 0)
         if total_profit_rate <= self.total_stop_loss:
             return True, 'STOP_LOSS', f"총 손실 한도 도달 ({total_profit_rate:.2f}%)"
 
-        # 3. 그리드 상단 도달 시 익절 (그리드 시스템 기반)
+        # 4. 그리드 상단 도달 시 익절 (그리드 시스템 기반)
         entry_grid_level = position.get('entry_grid_level', -1)
         if entry_grid_level >= 0 and self.grid_prices:
             # 진입 레벨보다 위의 그리드 레벨 도달 시
@@ -250,17 +256,20 @@ class GridTradingStrategy(BaseStrategy):
                 if current_price >= target_price:
                     return True, 'TAKE_PROFIT', f"다음 그리드 도달 (+{profit_rate:.2f}%)"
 
-        # 4. 변동성 급증 시 청산 (횡보장 이탈)
+        # 5. 변동성 급증 시 청산 (횡보장 이탈)
         atr = market_data.get('atr', 0)
         atr_ma = market_data.get('atr_ma', 0)
 
         if atr_ma > 0:
             atr_ratio = atr / atr_ma
             # ATR이 평균의 1.5배 이상이면 횡보장 이탈로 판단
-            if atr_ratio > 1.5 and profit_rate > 0:
-                return True, 'TAKE_PROFIT', f"변동성 급증 익절 (+{profit_rate:.2f}%)"
+            if atr_ratio > 1.5:
+                if profit_rate > 0.5:
+                    return True, 'TAKE_PROFIT', f"변동성 급증 익절 (+{profit_rate:.2f}%)"
+                if profit_rate < -0.3:
+                    return True, 'TAKE_PROFIT', f"변동성 급증 손절 (-{profit_rate:.2f}%)"
 
-        # 5. 장기 보유 손절 (설정된 시간 이상, 일정 손실 중)
+        # 6. 장기 보유 손절 (설정된 시간 이상, 일정 손실 중)
         # long_hold_minutes가 0이면 비활성화
         if self.long_hold_minutes > 0:
             if holding_minutes >= self.long_hold_minutes and profit_rate < self.long_hold_loss_threshold:

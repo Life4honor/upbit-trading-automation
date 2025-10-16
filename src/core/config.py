@@ -114,6 +114,7 @@ def print_config(config: Dict):
         print(f"  최대 포지션: {config.get('max_positions', 3)}개")
         print(f"  개별 그리드 익절: +{config.get('single_grid_profit', 1.0)}%")
         print(f"  전체 손절: {config.get('total_stop_loss', -3.0)}%")
+        print(f"  장기 보유 손절: {config.get('long_hold_minutes', 480)}분 (-{abs(config.get('long_hold_loss_threshold', -1.0))}% 이상)")
 
     elif strategy_type == 'volatility_breakout':
         print(f"  ATR 기간: {config.get('atr_period', 14)}")

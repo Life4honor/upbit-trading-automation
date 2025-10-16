@@ -953,7 +953,9 @@ class UnifiedTrader:
         md.append("|------|------|")
         md.append(f"| 초기 자본 | ₩{results['initial_capital']:,.0f} |")
         md.append(f"| 최종 자본 | ₩{results['final_capital']:,.0f} |")
-        md.append(f"| 총 손익 | ₩{results['total_profit']:,.0f} |")
+        # 총 손익은 최종 자본 - 초기 자본
+        actual_profit = results['final_capital'] - results['initial_capital']
+        md.append(f"| 총 손익 | ₩{actual_profit:,.0f} |")
         emoji = "📈" if results['total_profit_rate'] > 0 else "📉"
         md.append(f"| 수익률 (자본 대비) | {emoji} **{results['total_profit_rate']:+.2f}%** |")
 

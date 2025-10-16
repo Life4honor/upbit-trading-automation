@@ -101,10 +101,17 @@ clean_directory() {
     echo "   파일: ${file_count}개"
     echo "   폴더: ${dir_count}개"
 
-    # 강제 모드가 아니면 확인
+    # 강제 모드가 아니면 확인 (기본값: yes)
     if [ "$FORCE_MODE" = false ]; then
-        read -p "   정말 삭제하시겠습니까? (yes/no): " confirm
-        if [ "$confirm" != "yes" ]; then
+        read -p "   삭제하시겠습니까? [Y/n]: " confirm
+        # 소문자로 변환
+        confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
+        # 빈 값이면 yes로 처리
+        if [ -z "$confirm" ]; then
+            confirm="y"
+        fi
+        # n 또는 no만 거부
+        if [ "$confirm" = "n" ] || [ "$confirm" = "no" ]; then
             echo "   ⏭️  건너뛰기"
             return 0
         fi
@@ -155,10 +162,17 @@ clean_coin_directory() {
     echo "   파일: ${file_count}개"
     echo "   폴더: ${dir_count}개"
 
-    # 강제 모드가 아니면 확인
+    # 강제 모드가 아니면 확인 (기본값: yes)
     if [ "$FORCE_MODE" = false ]; then
-        read -p "   정말 삭제하시겠습니까? (yes/no): " confirm
-        if [ "$confirm" != "yes" ]; then
+        read -p "   삭제하시겠습니까? [Y/n]: " confirm
+        # 소문자로 변환
+        confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
+        # 빈 값이면 yes로 처리
+        if [ -z "$confirm" ]; then
+            confirm="y"
+        fi
+        # n 또는 no만 거부
+        if [ "$confirm" = "n" ] || [ "$confirm" = "no" ]; then
             echo "   ⏭️  건너뛰기"
             return 0
         fi

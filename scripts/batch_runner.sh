@@ -244,16 +244,6 @@ elif [ "$MODE" = "compare" ]; then
     echo "병렬 실행: 최대 $MAX_PARALLEL 개"
     echo ""
 
-    # 기존 백테스트 결과 정리 확인
-    if [ -d "backtest_reports" ] && [ "$(ls -A backtest_reports 2>/dev/null)" ]; then
-        echo "🗑️  기존 백테스트 결과를 정리하시겠습니까?"
-        read -p "정리 (yes/no): " cleanup
-        if [ "$cleanup" = "yes" ]; then
-            ./scripts/clean.sh --force
-            echo ""
-        fi
-    fi
-
 elif [ "$MODE" = "live" ]; then
     echo "전략: $PRESET"
     echo "코인: ${MARKETS[@]}"
@@ -269,6 +259,16 @@ fi
 
 echo "════════════════════════════════════════"
 echo ""
+
+# 백테스트/비교 모드인 경우 기존 결과 정리 확인
+if [ "$MODE" = "backtest" ] || [ "$MODE" = "compare" ]; then
+    if [ -d "backtest_reports" ] && [ "$(ls -A backtest_reports 2>/dev/null)" ]; then
+        echo "🗑️  기존 백테스트 결과 정리"
+        echo ""
+        ./scripts/clean.sh
+        echo ""
+    fi
+fi
 
 # 시작 시간
 START_TIME=$(date +%s)

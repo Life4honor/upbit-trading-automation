@@ -4,14 +4,15 @@
 # 복수 코인에 대해 비동기 병렬 실행 + 전략 비교 모드
 #
 # 사용법:
-#   ./scripts/batch_runner.sh backtest [preset] [days]     # 백테스트 모드
-#   ./scripts/batch_runner.sh compare [days]               # 전략 비교 모드
-#   ./scripts/batch_runner.sh live [preset] [amount]       # 실거래 모드
+#   ./scripts/batch_runner.sh backtest [preset] [days] [market]     # 백테스트 모드
+#   ./scripts/batch_runner.sh compare [days] [market]               # 전략 비교 모드
+#   ./scripts/batch_runner.sh live [preset] [amount] [market]       # 실거래 모드
 #
 # 예시:
-#   ./scripts/batch_runner.sh backtest bollinger-reversal 30
+#   ./scripts/batch_runner.sh backtest bollinger-reversal 30 KRW-BTC  # 단일 코인
+#   ./scripts/batch_runner.sh backtest bollinger-reversal 30          # 모든 코인 (BTC, ETH)
 #   ./scripts/batch_runner.sh compare 30
-#   ./scripts/batch_runner.sh live grid-trading 100000
+#   ./scripts/batch_runner.sh live grid-trading 100000 KRW-BTC
 #
 
 set -e
@@ -23,8 +24,8 @@ set -e
 # 실행 모드 (backtest, compare, 또는 live)
 MODE="${1:-backtest}"
 
-# 대상 코인
-MARKETS=("KRW-BTC" "KRW-ETH")
+# 기본 대상 코인
+DEFAULT_MARKETS=("KRW-BTC" "KRW-ETH")
 
 # 사용 가능한 전략 목록
 STRATEGIES=("default" "momentum-breakout" "grid-trading" "volatility-breakout" "bollinger-reversal")
@@ -37,9 +38,10 @@ MAX_PARALLEL=10
 # ==========================================
 
 if [ "$MODE" = "backtest" ]; then
-    # 백테스트 모드: preset과 days 설정
+    # 백테스트 모드: preset, days, market 설정
     PRESET="${2:-default}"
     DAYS="${3:-30}"
+    MARKET="${4:-}"
 
     # Preset 유효성 검사
     if [[ ! " ${STRATEGIES[@]} " =~ " ${PRESET} " ]]; then
@@ -48,34 +50,58 @@ if [ "$MODE" = "backtest" ]; then
         exit 1
     fi
 
+    # 마켓 설정
+    if [ -n "$MARKET" ]; then
+        MARKETS=("$MARKET")
+    else
+        MARKETS=("${DEFAULT_MARKETS[@]}")
+    fi
+
 elif [ "$MODE" = "compare" ]; then
     # 비교 모드: 모든 전략 실행
     DAYS="${2:-30}"
+    MARKET="${3:-}"
+
+    # 마켓 설정
+    if [ -n "$MARKET" ]; then
+        MARKETS=("$MARKET")
+    else
+        MARKETS=("${DEFAULT_MARKETS[@]}")
+    fi
 
 elif [ "$MODE" = "live" ]; then
-    # 실거래 모드: preset과 금액 설정
+    # 실거래 모드: preset, 금액, market 설정
     PRESET="${2:-default}"
     TRADE_AMOUNT="${3:-100000}"
+    MARKET="${4:-}"
 
     # Preset 유효성 검사
     if [[ ! " ${STRATEGIES[@]} " =~ " ${PRESET} " ]]; then
         echo "❌ 잘못된 preset: $PRESET"
         echo "사용 가능한 preset: ${STRATEGIES[@]}"
         exit 1
+    fi
+
+    # 마켓 설정
+    if [ -n "$MARKET" ]; then
+        MARKETS=("$MARKET")
+    else
+        MARKETS=("${DEFAULT_MARKETS[@]}")
     fi
 
 else
     echo "❌ 잘못된 모드: $MODE"
     echo ""
     echo "사용법:"
-    echo "  $0 backtest [preset] [days]"
-    echo "  $0 compare [days]"
-    echo "  $0 live [preset] [amount]"
+    echo "  $0 backtest [preset] [days] [market]"
+    echo "  $0 compare [days] [market]"
+    echo "  $0 live [preset] [amount] [market]"
     echo ""
     echo "예시:"
-    echo "  $0 backtest bollinger-reversal 30"
+    echo "  $0 backtest bollinger-reversal 30 KRW-BTC  # 단일 코인"
+    echo "  $0 backtest bollinger-reversal 30          # 모든 코인"
     echo "  $0 compare 30"
-    echo "  $0 live grid-trading 100000"
+    echo "  $0 live grid-trading 100000 KRW-BTC"
     exit 1
 fi
 

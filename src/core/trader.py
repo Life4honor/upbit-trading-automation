@@ -1115,8 +1115,8 @@ class UnifiedTrader:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] {message}"
         print(log_message)
-        
-        # 파일 저장
-        log_file = self.output_dir / f"{self.market}_{self.mode}_{datetime.now().strftime('%Y%m%d')}.log"
+
+        # 파일 저장 (세션 ID 포함하여 같은 날 여러 실행 구분)
+        log_file = self.output_dir / f"{self.market}_{self.mode}_{self.session_id}.log"
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(log_message + '\n')

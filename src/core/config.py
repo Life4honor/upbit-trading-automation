@@ -84,80 +84,6 @@ def print_config(config: Dict):
     print("=" * 40)
 
 
-def get_optimal_time_config() -> Dict:
-    """
-    최적 시간대 전략 설정 (거래량 분석 결과 기반)
-
-    시간대 필터 활성화:
-    - 오전 6-12시 (아시아 피크)
-    - 밤 11시-새벽 2시 (미국 마감 + 아시아 시작)
-    - 토요일 우선 (거래량 2배)
-    - 금요일 제외 (거래량 최저)
-    """
-    config = get_default_config()
-    config.update({
-        'use_time_filter': True,
-        'time_filter_mode': 'optimal',  # 6-12시, 23-02시
-        'exclude_weekdays': [4],  # 금요일 제외 (거래량 60% 수준)
-        'preferred_weekdays': None,  # 모든 요일 (금요일 제외)
-    })
-    return config
-
-
-def get_weekend_warrior_config() -> Dict:
-    """
-    주말 전용 전략 설정
-
-    토요일/일요일만 거래:
-    - 거래량: 평균 대비 190%
-    - 변동성 증가로 수익 기회 증가
-    - 직장인 최적 전략
-    """
-    config = get_default_config()
-    config.update({
-        'use_time_filter': True,
-        'time_filter_mode': 'optimal',
-        'preferred_weekdays': [5, 6],  # 토요일, 일요일만
-    })
-    return config
-
-
-def get_safe_hours_config() -> Dict:
-    """
-    안전 시간대 전략
-
-    저거래량 시간 제외:
-    - 새벽 3-5시 제외 (거래량 40-50%)
-    - 오후 2-3시 제외 (점심 후 저조)
-    - 저녁 7-9시 제외 (저녁 시간)
-    """
-    config = get_default_config()
-    config.update({
-        'use_time_filter': True,
-        'time_filter_mode': 'safe',  # 저거래량 시간만 제외
-    })
-    return config
-
-
-def get_peak_only_config() -> Dict:
-    """
-    피크 시간 전용 전략 (공격적)
-
-    최고 거래량 시간만:
-    - 오전 6-9시 (아침 피크)
-    - 자정-새벽 1시 (야간 피크)
-    - 가장 적은 거래 빈도
-    - 가장 높은 성공률 기대
-    """
-    config = get_default_config()
-    config.update({
-        'use_time_filter': True,
-        'time_filter_mode': 'peak',
-        'exclude_weekdays': [4],  # 금요일 제외
-    })
-    return config
-
-
 def get_momentum_breakout_config() -> Dict:
     """
     모멘텀 브레이크아웃 전략
@@ -311,12 +237,6 @@ PRESETS = {
     'grid-trading': get_grid_trading_config,
     'volatility-breakout': get_volatility_breakout_config,
     'bollinger-reversal': get_bollinger_reversal_config,
-
-    # 시간대 필터 (기존)
-    'optimal-time': get_optimal_time_config,
-    'weekend': get_weekend_warrior_config,
-    'safe-hours': get_safe_hours_config,
-    'peak-only': get_peak_only_config,
 }
 
 

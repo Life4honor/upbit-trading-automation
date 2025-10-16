@@ -82,17 +82,11 @@ def parse_args():
         type=str,
         default='default',
         choices=[
-            # 트레이딩 전략
             'default',
             'momentum-breakout',
             'grid-trading',
             'volatility-breakout',
             'bollinger-reversal',
-            # 시간대 필터
-            'optimal-time',
-            'weekend',
-            'safe-hours',
-            'peak-only'
         ],
         help='전략 프리셋 (기본: default=RSI스캘핑)'
     )

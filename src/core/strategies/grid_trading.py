@@ -78,6 +78,7 @@ class GridTradingStrategy(BaseStrategy):
         self.base_price = None  # 그리드 기준 가격
         self.grid_initialized_at = None  # 그리드 초기화 시각
         self.last_bb_width = None  # 이전 볼린저 밴드 폭
+        self.occupied_grid_levels = set()  # 이미 진입한 그리드 레벨 (중복 방지)
 
     def compute_dynamic_spacing(self, atr: float, price: float) -> float:
         """
@@ -329,6 +330,10 @@ class GridTradingStrategy(BaseStrategy):
         if nearest_idx > mid_idx:
             return False, f"그리드 상단 ({nearest_idx}/{len(self.grid_prices)})"
 
+        # 7. 그리드 레벨 중복 체크 (이미 진입한 레벨에는 재진입 안 함)
+        if nearest_idx in self.occupied_grid_levels:
+            return False, f"그리드 레벨 {nearest_idx} 이미 진입"
+
         return True, f"그리드 매수 (레벨 {nearest_idx}, ₩{nearest_grid:,.0f})"
 
     def check_exit_conditions(self, position: Dict, market_data: Dict,
@@ -441,7 +446,28 @@ class GridTradingStrategy(BaseStrategy):
 
         return position_size
 
+    def mark_grid_level_occupied(self, grid_level: int):
+        """
+        그리드 레벨을 점유 상태로 표시
+
+        Args:
+            grid_level: 점유할 그리드 레벨 인덱스
+        """
+        if grid_level >= 0:
+            self.occupied_grid_levels.add(grid_level)
+
+    def release_grid_level(self, grid_level: int):
+        """
+        그리드 레벨 점유 해제
+
+        Args:
+            grid_level: 해제할 그리드 레벨 인덱스
+        """
+        if grid_level >= 0:
+            self.occupied_grid_levels.discard(grid_level)
+
     def reset_grid(self):
         """그리드 초기화"""
         self.grid_prices = []
         self.base_price = None
+        self.occupied_grid_levels.clear()  # 점유 레벨도 초기화

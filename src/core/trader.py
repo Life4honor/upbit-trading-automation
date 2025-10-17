@@ -418,8 +418,11 @@ class UnifiedTrader:
 
             # 그리드 레벨 정보 저장 (그리드 트레이딩용)
             entry_grid_level = -1
-            if strategy_type == 'grid_trading' and hasattr(self.strategy, 'get_nearest_grid_level'):
+            if (strategy_type == 'grid_trading' or strategy_type == 'hybrid_grid') and hasattr(self.strategy, 'get_nearest_grid_level'):
                 entry_grid_level, _ = self.strategy.get_nearest_grid_level(entry_price)
+                # 그리드 레벨 점유 표시
+                if hasattr(self.strategy, 'mark_grid_level_occupied'):
+                    self.strategy.mark_grid_level_occupied(entry_grid_level)
 
             position = {
                 'entry_time': timestamp,
@@ -508,8 +511,11 @@ class UnifiedTrader:
                 # 그리드 레벨 정보 저장 (그리드 트레이딩용)
                 entry_price = analysis['current_price']
                 entry_grid_level = -1
-                if strategy_type == 'grid_trading' and hasattr(self.strategy, 'get_nearest_grid_level'):
+                if (strategy_type == 'grid_trading' or strategy_type == 'hybrid_grid') and hasattr(self.strategy, 'get_nearest_grid_level'):
                     entry_grid_level, _ = self.strategy.get_nearest_grid_level(entry_price)
+                    # 그리드 레벨 점유 표시
+                    if hasattr(self.strategy, 'mark_grid_level_occupied'):
+                        self.strategy.mark_grid_level_occupied(entry_grid_level)
 
                 position = {
                     'entry_time': timestamp,
@@ -621,6 +627,11 @@ class UnifiedTrader:
             self.trades.append(trade)
             self.update_daily_stats(timestamp.date(), trade)
 
+            # 그리드 레벨 해제 (그리드 트레이딩용)
+            entry_grid_level = position.get('entry_grid_level', -1)
+            if entry_grid_level >= 0 and hasattr(self.strategy, 'release_grid_level'):
+                self.strategy.release_grid_level(entry_grid_level)
+
             # 해당 포지션 제거
             self.positions.pop(position_idx)
             self.last_trade_time = timestamp
@@ -708,6 +719,11 @@ class UnifiedTrader:
 
                 self.trades.append(trade)
                 self.update_daily_stats(timestamp.date(), trade)
+
+                # 그리드 레벨 해제 (그리드 트레이딩용)
+                entry_grid_level = position.get('entry_grid_level', -1)
+                if entry_grid_level >= 0 and hasattr(self.strategy, 'release_grid_level'):
+                    self.strategy.release_grid_level(entry_grid_level)
 
                 # 해당 포지션 제거
                 self.positions.pop(position_idx)

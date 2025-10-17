@@ -4,18 +4,16 @@
 백테스트와 실거래를 하나의 명령어로
 
 사용법:
-    # 백테스트 (기본 그리드 트레이딩)
+    # 백테스트 (기본 Hybrid Grid Trading)
     uv run scripts/run.py --backtest -m KRW-BTC --days 7
+    uv run scripts/run.py --backtest -m KRW-ETH --days 30
 
-    # 백테스트 (다른 전략)
-    uv run scripts/run.py --backtest -m KRW-ETH -p momentum-breakout --days 30
-    uv run scripts/run.py --backtest -m KRW-SOL -p grid-trading --days 90
-    uv run scripts/run.py --backtest -m KRW-BTC -p volatility-breakout --days 60
-    uv run scripts/run.py --backtest -m KRW-ETH -p bollinger-reversal --days 30
+    # 백테스트 (레거시 Grid Trading)
+    uv run scripts/run.py --backtest -m KRW-BTC -p grid-trading --days 7
 
     # 실거래 (⚠️ 주의: 실제 거래!)
     uv run scripts/run.py --live -m KRW-BTC -a 100000
-    uv run scripts/run.py --live -m KRW-ETH -p bollinger-reversal -a 50000
+    uv run scripts/run.py --live -m KRW-ETH -p grid-trading -a 50000
 """
 
 import sys
@@ -38,18 +36,16 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 예시:
-  # 백테스트 (기본 그리드 트레이딩)
+  # 백테스트 (기본 Hybrid Grid Trading)
   uv run scripts/run.py --backtest -m KRW-BTC --days 7
+  uv run scripts/run.py --backtest -m KRW-ETH --days 30
 
-  # 백테스트 (다른 전략)
-  uv run scripts/run.py --backtest -m KRW-ETH -p momentum-breakout --days 30
-  uv run scripts/run.py --backtest -m KRW-SOL -p grid-trading --days 90
-  uv run scripts/run.py --backtest -m KRW-BTC -p volatility-breakout --days 60
-  uv run scripts/run.py --backtest -m KRW-ETH -p bollinger-reversal --days 30
+  # 백테스트 (레거시 Grid Trading)
+  uv run scripts/run.py --backtest -m KRW-BTC -p grid-trading --days 7
 
   # 실거래 (⚠️ 주의: 실제 거래!)
   uv run scripts/run.py --live -m KRW-BTC -a 100000
-  uv run scripts/run.py --live -m KRW-ETH -p bollinger-reversal -a 50000
+  uv run scripts/run.py --live -m KRW-ETH -p grid-trading -a 50000
 
   # Dry-run (설정만 확인)
   uv run scripts/run.py --live -m KRW-BTC -a 100000 --dry-run
@@ -80,15 +76,12 @@ def parse_args():
     parser.add_argument(
         '-p', '--preset',
         type=str,
-        default='default',
+        default='hybrid-grid',
         choices=[
-            'default',
-            'momentum-breakout',
+            'hybrid-grid',
             'grid-trading',
-            'volatility-breakout',
-            'bollinger-reversal',
         ],
-        help='전략 프리셋 (기본: default=그리드트레이딩)'
+        help='전략 프리셋 (기본: hybrid-grid)'
     )
     
     # 백테스트 옵션

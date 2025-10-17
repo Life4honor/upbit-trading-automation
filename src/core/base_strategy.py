@@ -248,6 +248,113 @@ class BaseStrategy(ABC):
         volatility = returns.rolling(window=period).std() * 100
         return volatility.iloc[-1] if len(volatility) > 0 else 0.0
 
+    @staticmethod
+    def calculate_adx(df: pd.DataFrame, period: int = 14) -> float:
+        """
+        ADX (Average Directional Index) 계산
+
+        추세 강도를 측정하는 지표:
+        - ADX > 25: 강한 추세
+        - ADX < 20: 약한 추세 (횡보)
+
+        Args:
+            df: OHLC 데이터프레임 (high, low, close 컬럼 필요)
+            period: ADX 계산 기간
+
+        Returns:
+            ADX 값 (0-100)
+        """
+        high = df['high']
+        low = df['low']
+        close = df['close']
+
+        # True Range 계산
+        tr1 = high - low
+        tr2 = abs(high - close.shift())
+        tr3 = abs(low - close.shift())
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        # Directional Movement 계산
+        high_diff = high - high.shift()
+        low_diff = low.shift() - low
+
+        plus_dm = pd.Series(0.0, index=df.index)
+        minus_dm = pd.Series(0.0, index=df.index)
+
+        plus_dm[(high_diff > low_diff) & (high_diff > 0)] = high_diff
+        minus_dm[(low_diff > high_diff) & (low_diff > 0)] = low_diff
+
+        # ATR, +DI, -DI 계산
+        atr = tr.rolling(window=period).mean()
+        plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr)
+        minus_di = 100 * (minus_dm.rolling(window=period).mean() / atr)
+
+        # DX 계산
+        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+        dx = dx.fillna(0)
+
+        # ADX 계산 (DX의 이동평균)
+        adx = dx.rolling(window=period).mean()
+
+        return adx.iloc[-1] if len(adx) > 0 else 0.0
+
+    @staticmethod
+    def calculate_ema_slope(prices: pd.Series, period: int, lookback: int = 5) -> float:
+        """
+        EMA 기울기 계산
+
+        최근 lookback 봉 동안의 EMA 변화율을 계산하여 추세 방향과 강도를 측정
+
+        Args:
+            prices: 가격 시리즈
+            period: EMA 기간
+            lookback: 기울기 계산 기간 (기본 5봉)
+
+        Returns:
+            EMA 기울기 (% 변화율)
+            - 양수: 상승 추세
+            - 음수: 하락 추세
+            - 절댓값이 클수록 강한 추세
+        """
+        ema = prices.ewm(span=period, adjust=False).mean()
+
+        if len(ema) < lookback + 1:
+            return 0.0
+
+        # 최근 lookback 봉 동안의 변화율
+        current_ema = ema.iloc[-1]
+        past_ema = ema.iloc[-lookback - 1]
+
+        if past_ema == 0:
+            return 0.0
+
+        slope = (current_ema - past_ema) / past_ema * 100
+        return slope
+
+    @staticmethod
+    def calculate_rolling_std(prices: pd.Series, period: int = 50) -> Tuple[float, float]:
+        """
+        Rolling 표준편차 계산
+
+        변동성 급등 감지를 위한 표준편차와 그 평균을 계산
+
+        Args:
+            prices: 가격 시리즈
+            period: 표준편차 계산 기간
+
+        Returns:
+            (현재 표준편차, 평균 표준편차)
+        """
+        std = prices.rolling(window=period).std()
+
+        if len(std) < period:
+            return 0.0, 0.0
+
+        current_std = std.iloc[-1]
+        mean_std = std.mean()
+
+        return current_std, mean_std
+
     def get_strategy_name(self) -> str:
         """전략 이름 반환"""
         return self.__class__.__name__

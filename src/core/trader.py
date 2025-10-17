@@ -374,7 +374,11 @@ class UnifiedTrader:
         """매수 실행 (동적 목표 수익률 적용)"""
         if self.mode == 'backtest':
             # 시뮬레이션 매수
-            entry_price = analysis['current_price']
+            base_price = analysis['current_price']
+
+            # 슬리피지 반영 (매수 시 불리하게)
+            slippage_pct = self.config.get('risk', {}).get('slippage_pct', 0.05)
+            entry_price = base_price * (1 + slippage_pct / 100)
 
             # 그리드 트레이딩용 자본 분산
             strategy_type = self.config.get('strategy_type', 'scalping')
@@ -576,7 +580,12 @@ class UnifiedTrader:
             position = self.positions[position_idx]
 
             # 시뮬레이션 매도
-            exit_price = analysis['current_price']
+            base_price = analysis['current_price']
+
+            # 슬리피지 반영 (매도 시 불리하게)
+            slippage_pct = self.config.get('risk', {}).get('slippage_pct', 0.05)
+            exit_price = base_price * (1 - slippage_pct / 100)
+
             sell_amount = position['quantity'] * exit_price
             fee = sell_amount * (self.fee_rate / 100)
             net_amount = sell_amount - fee

@@ -33,6 +33,7 @@ def print_config(config: Dict):
         risk = config.get('risk', {})
         print(f"\n⚠️  리스크 관리:")
         print(f"  거래당 리스크: {risk.get('risk_per_trade', 0.01)*100:.1f}%")
+        print(f"  ATR 손절 배수: {risk.get('atr_stop_multiple', 2.0)}")
         print(f"  개별 손절: {risk.get('single_position_stop_loss', -0.5)}%")
         print(f"  수수료: {risk.get('fee_rate', 0.05)}%")
         print(f"  슬리피지: {risk.get('slippage_pct', 0.05)}%")
@@ -138,6 +139,7 @@ def get_hybrid_grid_config() -> Dict:
         # 리스크 관리
         'risk': {
             'risk_per_trade': 0.01,         # 거래당 리스크 (1%)
+            'atr_stop_multiple': 2.0,       # ATR 손절 배수
             'total_stop_loss': 0,           # 전체 손절 (0=비활성화)
             'single_position_stop_loss': -0.5,  # 개별 손절 (%)
             'fee_rate': 0.05,               # 수수료 (%)

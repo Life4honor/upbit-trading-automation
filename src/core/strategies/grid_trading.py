@@ -396,6 +396,51 @@ class GridTradingStrategy(BaseStrategy):
 
         return False, None, None
 
+    def calculate_position_size(self, entry_price: float, atr: float,
+                                 available_capital: float) -> float:
+        """
+        Risk 기반 포지션 사이징
+
+        수식:
+        - 손절가 = entry_price - N*ATR
+        - 리스크 금액 = available_capital × risk_per_trade (예: 1%)
+        - 포지션 크기 = 리스크 금액 / (진입가 - 손절가)
+
+        Args:
+            entry_price: 진입가
+            atr: ATR 값
+            available_capital: 사용 가능한 자본 (KRW 잔고 or 초기 자본)
+
+        Returns:
+            계산된 포지션 크기 (KRW)
+        """
+        # Risk 설정 가져오기 (구조화된 config)
+        risk_config = self.config.get('risk', {})
+        risk_per_trade = risk_config.get('risk_per_trade', 0.01)  # 기본 1%
+        atr_stop_multiple = risk_config.get('atr_stop_multiple', 2.0)  # 기본 2.0
+
+        # ATR 기반 손절가 계산
+        stop_loss_price = entry_price - (atr * atr_stop_multiple)
+
+        # 손실 폭 (%)
+        loss_pct = (entry_price - stop_loss_price) / entry_price
+
+        # 손실 폭이 너무 작으면 최소값 적용 (0.5%)
+        if loss_pct < 0.005:
+            loss_pct = 0.005
+
+        # 리스크 금액
+        risk_amount = available_capital * risk_per_trade
+
+        # 포지션 크기 = 리스크 금액 / 손실 폭
+        position_size = risk_amount / loss_pct
+
+        # 최대 자본의 30%로 제한 (과도한 레버리지 방지)
+        max_position = available_capital * 0.30
+        position_size = min(position_size, max_position)
+
+        return position_size
+
     def reset_grid(self):
         """그리드 초기화"""
         self.grid_prices = []

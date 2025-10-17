@@ -378,9 +378,24 @@ class UnifiedTrader:
 
             # 그리드 트레이딩용 자본 분산
             strategy_type = self.config.get('strategy_type', 'scalping')
-            if strategy_type == 'grid_trading':
-                max_positions = self.config.get('max_positions', 3)
-                position_amount = self.trade_amount / max_positions  # 자본을 max_positions로 분할
+            if strategy_type == 'grid_trading' or strategy_type == 'hybrid_grid':
+                # Risk 기반 포지션 사이징 사용 여부 체크
+                if hasattr(self.strategy, 'calculate_position_size'):
+                    atr = analysis.get('atr', 0)
+                    if atr > 0:
+                        # Risk 기반 포지션 사이징
+                        position_amount = self.strategy.calculate_position_size(
+                            entry_price, atr, self.capital
+                        )
+                    else:
+                        # ATR 없으면 고정 분할
+                        max_positions = self.config.get('grid', {}).get('max_positions', 3)
+                        position_amount = self.trade_amount / max_positions
+                else:
+                    # 레거시: 고정 분할
+                    max_positions = self.config.get('max_positions', 3)
+                    position_amount = self.trade_amount / max_positions
+
                 amount = min(self.capital, position_amount)
             else:
                 # 기존 전략은 전액 사용
@@ -445,9 +460,24 @@ class UnifiedTrader:
 
             # 그리드 트레이딩용 자본 분산
             strategy_type = self.config.get('strategy_type', 'scalping')
-            if strategy_type == 'grid_trading':
-                max_positions = self.config.get('max_positions', 3)
-                position_amount = self.trade_amount / max_positions  # 자본을 max_positions로 분할
+            if strategy_type == 'grid_trading' or strategy_type == 'hybrid_grid':
+                # Risk 기반 포지션 사이징 사용 여부 체크
+                if hasattr(self.strategy, 'calculate_position_size'):
+                    atr = analysis.get('atr', 0)
+                    if atr > 0:
+                        # Risk 기반 포지션 사이징
+                        position_amount = self.strategy.calculate_position_size(
+                            analysis['current_price'], atr, krw_balance
+                        )
+                    else:
+                        # ATR 없으면 고정 분할
+                        max_positions = self.config.get('grid', {}).get('max_positions', 3)
+                        position_amount = self.trade_amount / max_positions
+                else:
+                    # 레거시: 고정 분할
+                    max_positions = self.config.get('max_positions', 3)
+                    position_amount = self.trade_amount / max_positions
+
                 buy_amount = min(krw_balance, position_amount)
             else:
                 # 기존 전략은 전액 사용

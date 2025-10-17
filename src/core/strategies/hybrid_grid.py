@@ -110,3 +110,117 @@ class HybridGridStrategy(GridTradingStrategy):
         # NEUTRAL: 그 외
         else:
             return MarketMode.NEUTRAL
+
+    def check_breakout_entry(self, market_data: Dict, df: pd.DataFrame, mode: MarketMode) -> Tuple[bool, str, str]:
+        """
+        Breakout 진입 조건 체크
+
+        조건:
+        - TREND 모드
+        - 표준편차 급증 (volatility spike)
+        - EMA 정배열(Long) 또는 역배열(Short)
+
+        Args:
+            market_data: 시장 데이터
+            df: OHLC 데이터프레임
+            mode: 현재 마켓 모드
+
+        Returns:
+            (진입 가능 여부, 방향 ('long' or 'short'), 사유)
+        """
+        if not self.breakout_enabled:
+            return False, None, "Breakout 전략 비활성화"
+
+        if mode != MarketMode.TREND:
+            return False, None, f"모드 불일치 ({mode.value})"
+
+        current_price = market_data['current_price']
+
+        # 1. 변동성 급증 체크 (표준편차)
+        current_std, mean_std = self.calculate_rolling_std(df['close'], period=self.std_period)
+
+        if current_std <= mean_std * self.volatility_spike_threshold:
+            return False, None, f"변동성 급증 없음 (std: {current_std:.2f} < {mean_std * self.volatility_spike_threshold:.2f})"
+
+        # 2. EMA 배열 체크 (추세 방향 확인)
+        ema_slopes = []
+        for period in self.ema_periods:
+            slope = self.calculate_ema_slope(df['close'], period=period, lookback=5)
+            ema_slopes.append(slope)
+
+        avg_slope = sum(ema_slopes) / len(ema_slopes) if ema_slopes else 0
+
+        # Long: 상승 추세 (EMA 정배열)
+        if avg_slope > self.ema_slope_threshold:
+            return True, 'long', f"Breakout Long (변동성: {current_std:.2f}, EMA slope: {avg_slope:+.2f}%)"
+
+        # Short: 하락 추세 (EMA 역배열)
+        elif avg_slope < -self.ema_slope_threshold:
+            return True, 'short', f"Breakout Short (변동성: {current_std:.2f}, EMA slope: {avg_slope:+.2f}%)"
+
+        else:
+            return False, None, f"추세 불명확 (EMA slope: {avg_slope:+.2f}%)"
+
+    def check_breakout_exit(self, position: Dict, market_data: Dict, holding_minutes: float) -> Tuple[bool, str, str]:
+        """
+        Breakout 청산 조건 체크
+
+        - Long: ATR * 1.5 트레일링 스탑 (여유)
+        - Short: ATR * 0.5 빠른 손절 (공격적)
+
+        Args:
+            position: 포지션 정보
+                - entry_price: 진입가
+                - direction: 'long' or 'short'
+                - highest_price: 최고가 (Long 트레일링용)
+                - lowest_price: 최저가 (Short 트레일링용)
+            market_data: 현재 시장 데이터
+            holding_minutes: 보유 시간 (분)
+
+        Returns:
+            (청산 여부, 청산 유형, 사유)
+        """
+        current_price = market_data['current_price']
+        entry_price = position['entry_price']
+        direction = position.get('direction', 'long')
+        atr = market_data.get('atr', 0)
+
+        profit_rate = (current_price - entry_price) / entry_price * 100
+
+        # Long 포지션
+        if direction == 'long':
+            # 최고가 업데이트
+            highest_price = position.get('highest_price', entry_price)
+            if current_price > highest_price:
+                position['highest_price'] = current_price
+                highest_price = current_price
+
+            # 트레일링 스탑 (ATR * 1.5)
+            if atr > 0:
+                stop_price = highest_price - (atr * self.trailing_stop_atr_multiple_long)
+                if current_price <= stop_price:
+                    return True, 'TAKE_PROFIT', f"Long 트레일링 스탑 ({profit_rate:+.2f}%)"
+
+            # 기본 손절 (-2%)
+            if profit_rate <= -2.0:
+                return True, 'STOP_LOSS', f"Long 손절 ({profit_rate:+.2f}%)"
+
+        # Short 포지션
+        elif direction == 'short':
+            # 최저가 업데이트
+            lowest_price = position.get('lowest_price', entry_price)
+            if current_price < lowest_price:
+                position['lowest_price'] = current_price
+                lowest_price = current_price
+
+            # 빠른 손절 (ATR * 0.5)
+            if atr > 0:
+                stop_price = lowest_price + (atr * self.trailing_stop_atr_multiple_short)
+                if current_price >= stop_price:
+                    return True, 'STOP_LOSS', f"Short 손절 ({profit_rate:+.2f}%)"
+
+            # 기본 익절 (+2%)
+            if profit_rate >= 2.0:
+                return True, 'TAKE_PROFIT', f"Short 익절 ({profit_rate:+.2f}%)"
+
+        return False, None, None

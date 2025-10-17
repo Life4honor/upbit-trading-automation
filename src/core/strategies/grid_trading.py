@@ -38,10 +38,17 @@ class GridTradingStrategy(BaseStrategy):
         """
         super().__init__(config)
 
-        # 그리드 파라미터
-        self.grid_levels = config.get('grid_levels', 5)  # 그리드 개수
-        self.grid_spacing = config.get('grid_spacing', 1.0)  # 각 그리드 간격 (%)
-        self.max_positions = config.get('max_positions', 3)  # 동시 보유 최대 개수
+        # 그리드 파라미터 (구조화된 config 지원)
+        grid_config = config.get('grid', {})
+        self.grid_levels = grid_config.get('levels', config.get('grid_levels', 5))
+        self.grid_spacing = config.get('grid_spacing', 1.0)  # fallback (레거시)
+        self.max_positions = grid_config.get('max_positions', config.get('max_positions', 3))
+
+        # 동적 spacing 파라미터 (ATR 기반)
+        self.atr_spacing_k = grid_config.get('atr_spacing_k', None)  # None이면 고정 spacing 사용
+        self.min_grid_spacing = grid_config.get('min_grid_spacing', 0.3)
+        self.max_grid_spacing = grid_config.get('max_grid_spacing', 2.0)
+        self.current_spacing = self.grid_spacing  # 현재 사용 중인 spacing (동적 변경)
 
         # 변동성 파라미터
         self.atr_period = config.get('atr_period', 14)
@@ -72,21 +79,58 @@ class GridTradingStrategy(BaseStrategy):
         self.grid_initialized_at = None  # 그리드 초기화 시각
         self.last_bb_width = None  # 이전 볼린저 밴드 폭
 
-    def initialize_grid(self, current_price: float, timestamp: datetime = None):
+    def compute_dynamic_spacing(self, atr: float, price: float) -> float:
+        """
+        ATR 기반 동적 그리드 간격 계산
+
+        수식: spacing_pct = k * (ATR / price) * 100
+
+        Args:
+            atr: 현재 ATR 값
+            price: 현재가
+
+        Returns:
+            계산된 spacing (%), min/max 범위로 제한됨
+        """
+        # ATR 기반 spacing 비활성화 시 고정값 사용
+        if self.atr_spacing_k is None:
+            return self.grid_spacing
+
+        # ATR 또는 price가 유효하지 않으면 fallback
+        if atr <= 0 or price <= 0:
+            return self.grid_spacing
+
+        # 동적 spacing 계산
+        spacing_pct = self.atr_spacing_k * (atr / price) * 100
+
+        # min/max 범위로 제한
+        spacing_pct = max(self.min_grid_spacing, min(spacing_pct, self.max_grid_spacing))
+
+        return spacing_pct
+
+    def initialize_grid(self, current_price: float, timestamp: datetime = None,
+                       atr: float = None):
         """
         그리드 가격 레벨 초기화
 
         Args:
             current_price: 현재가
             timestamp: 초기화 시각 (None이면 현재 시각)
+            atr: ATR 값 (동적 spacing 계산용, None이면 고정 spacing 사용)
         """
         self.base_price = current_price
         self.grid_prices = []
         self.grid_initialized_at = timestamp or datetime.now()
 
+        # 동적 spacing 계산 (ATR 기반)
+        if atr is not None and self.atr_spacing_k is not None:
+            self.current_spacing = self.compute_dynamic_spacing(atr, current_price)
+        else:
+            self.current_spacing = self.grid_spacing
+
         # 현재가 기준으로 위아래로 그리드 생성
         for i in range(-(self.grid_levels // 2), (self.grid_levels // 2) + 1):
-            price = current_price * (1 + (i * self.grid_spacing / 100))
+            price = current_price * (1 + (i * self.current_spacing / 100))
             self.grid_prices.append(price)
 
         self.grid_prices.sort()
@@ -263,7 +307,8 @@ class GridTradingStrategy(BaseStrategy):
         should_reset, reset_reason = self.should_reset_grid(market_data)
         if should_reset:
             timestamp = market_data.get('timestamp')
-            self.initialize_grid(current_price, timestamp)
+            atr = market_data.get('atr', None)
+            self.initialize_grid(current_price, timestamp, atr)
 
         # 5. 그리드 하단 도달 체크
         # 현재가가 그리드 레벨 근처인지 확인 (±0.2% 허용)

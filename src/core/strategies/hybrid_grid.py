@@ -224,3 +224,73 @@ class HybridGridStrategy(GridTradingStrategy):
                 return True, 'TAKE_PROFIT', f"Short 익절 ({profit_rate:+.2f}%)"
 
         return False, None, None
+
+    def check_entry_conditions(self, market_data: Dict, df: pd.DataFrame = None) -> Tuple[bool, str]:
+        """
+        매수 조건 체크 (오버라이드)
+
+        모드에 따라 Grid 또는 Breakout 로직 선택
+
+        Args:
+            market_data: 시장 데이터
+            df: OHLC 데이터프레임 (모드 판단용)
+
+        Returns:
+            (진입 가능 여부, 사유)
+        """
+        # 데이터프레임이 없으면 Grid 모드로 폴백
+        if df is None or len(df) < max(self.adx_period, max(self.ema_periods), self.std_period):
+            return super().check_entry_conditions(market_data)
+
+        # 마켓 모드 판단
+        mode = self.determine_market_mode(market_data, df)
+        self.current_mode = mode
+
+        # RANGE/NEUTRAL 모드: Grid Trading
+        if mode in [MarketMode.RANGE, MarketMode.NEUTRAL]:
+            can_enter, reason = super().check_entry_conditions(market_data)
+            if can_enter:
+                # sub_strategy 태그 추가를 위해 market_data에 저장
+                market_data['sub_strategy'] = 'grid'
+            return can_enter, f"[{mode.value.upper()}] {reason}"
+
+        # TREND 모드: Breakout Trading
+        elif mode == MarketMode.TREND:
+            can_enter, direction, reason = self.check_breakout_entry(market_data, df, mode)
+            if can_enter:
+                # sub_strategy와 direction 태그 추가
+                market_data['sub_strategy'] = 'breakout'
+                market_data['direction'] = direction
+            return can_enter, f"[{mode.value.upper()}] {reason}"
+
+        return False, f"알 수 없는 모드: {mode}"
+
+    def check_exit_conditions(self, position: Dict, market_data: Dict,
+                              holding_minutes: float) -> Tuple[bool, str, str]:
+        """
+        매도 조건 체크 (오버라이드)
+
+        포지션의 sub_strategy에 따라 분기
+
+        Args:
+            position: 포지션 정보
+                - sub_strategy: 'grid' or 'breakout'
+            market_data: 현재 시장 데이터
+            holding_minutes: 보유 시간 (분)
+
+        Returns:
+            (청산 여부, 청산 유형, 사유)
+        """
+        sub_strategy = position.get('sub_strategy', 'grid')
+
+        # Grid 포지션
+        if sub_strategy == 'grid':
+            return super().check_exit_conditions(position, market_data, holding_minutes)
+
+        # Breakout 포지션
+        elif sub_strategy == 'breakout':
+            return self.check_breakout_exit(position, market_data, holding_minutes)
+
+        # 기본 폴백 (Grid)
+        else:
+            return super().check_exit_conditions(position, market_data, holding_minutes)

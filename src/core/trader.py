@@ -442,7 +442,11 @@ class UnifiedTrader:
                 'quantity': (amount - fee) / entry_price,
                 'fee': fee,
                 'target_profit': dynamic_target,  # 동적 목표 저장
-                'entry_grid_level': entry_grid_level  # 그리드 레벨 정보
+                'entry_grid_level': entry_grid_level,  # 그리드 레벨 정보
+                'sub_strategy': analysis.get('sub_strategy', 'grid'),  # HybridGrid용
+                'direction': analysis.get('direction'),  # Breakout 방향
+                'highest_price': entry_price,  # Long 트레일링용
+                'lowest_price': entry_price,  # Short 트레일링용
             }
 
             # 다중 포지션 관리
@@ -534,7 +538,11 @@ class UnifiedTrader:
                     'amount': buy_amount,
                     'order_id': result.get('uuid'),
                     'target_profit': dynamic_target,  # 동적 목표 저장
-                    'entry_grid_level': entry_grid_level  # 그리드 레벨 정보
+                    'entry_grid_level': entry_grid_level,  # 그리드 레벨 정보
+                    'sub_strategy': analysis.get('sub_strategy', 'grid'),  # HybridGrid용
+                    'direction': analysis.get('direction'),  # Breakout 방향
+                    'highest_price': entry_price,  # Long 트레일링용
+                    'lowest_price': entry_price,  # Short 트레일링용
                 }
 
                 # 다중 포지션 관리

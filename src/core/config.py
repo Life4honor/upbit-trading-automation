@@ -5,59 +5,14 @@
 from typing import Dict
 
 
-def get_default_config() -> Dict:
-    """
-    그리드 트레이딩 전략 (기본값)
-
-    특징:
-    - 횡보장 구간 수익
-    - 높은 승률 (92%+)
-    - 안정적 수익
-    - 장기 보유 전략
-    """
-    return {
-        'strategy_type': 'grid_trading',
-        'initial_capital': 1_000_000,
-
-        # 그리드 파라미터
-        'grid_levels': 5,  # 5개 그리드
-        'grid_spacing': 1.0,  # 1% 간격
-        'max_positions': 3,  # 최대 3개 동시 보유
-
-        # 변동성 조건
-        'atr_period': 14,
-        'max_atr_threshold': 0.8,  # ATR < 평균의 80%
-
-        # 청산 조건
-        'single_position_stop_loss': -1.5,  # 개별 포지션 손절 -1.5%
-        'single_grid_profit': 1.0,  # 개별 그리드 +1%
-        'total_stop_loss': -3.0,  # 전체 손실 -3%
-        'long_hold_minutes': 0,  # 장기 보유 손절 비활성화
-        'long_hold_loss_threshold': -1.0,
-        'fee_rate': 0.05,
-
-        # 그리드 재초기화
-        'grid_reset_hours': 8,  # 8시간마다 재초기화
-        'bb_period': 20,  # 볼린저 밴드 기간
-        'bb_std': 2.0,
-        'bb_width_change_threshold': 30.0,  # BB 폭 30% 변화 시 재초기화
-
-        # 기타
-        'cooldown_minutes': 0,
-        'max_trades_per_day': None,  # 무제한
-    }
-
-
-
 def print_config(config: Dict):
     """설정 출력 (전략별 동적 출력)"""
-    strategy_type = config.get('strategy_type', 'scalping')
+    strategy_type = config.get('strategy_type', 'grit-trading')
 
     # 전략명 매핑
     strategy_names = {
-        'scalping': 'RSI 스캘핑',
-        'momentum_breakout': '모멘텀 브레이크아웃',
         'grid_trading': '그리드 트레이딩',
+        'momentum_breakout': '모멘텀 브레이크아웃',
         'volatility_breakout': '변동성 브레이크아웃',
         'bollinger_reversal': '볼린저밴드 리버설',
     }
@@ -65,7 +20,6 @@ def print_config(config: Dict):
 
     print(f"⚙️ 전략: {strategy_name}")
     print("=" * 40)
-    print(f"초기 자본: ₩{config['initial_capital']:,}")
 
     # 공통 파라미터
     if 'target_profit' in config:
@@ -82,20 +36,7 @@ def print_config(config: Dict):
     # 전략별 주요 파라미터
     print("\n주요 파라미터:")
 
-    if strategy_type == 'scalping':
-        # RSI 스캘핑 전용
-        if 'rsi_5m_min' in config:
-            print(f"  RSI 5분: {config['rsi_5m_min']}-{config['rsi_5m_max']}")
-        if 'rsi_15m_min' in config:
-            print(f"  RSI 15분: {config['rsi_15m_min']}-{config['rsi_15m_max']}")
-        if 'rsi_1h_min' in config:
-            print(f"  RSI 1시간: {config['rsi_1h_min']}-{config['rsi_1h_max']}")
-        if 'volume_surge_ratio' in config:
-            print(f"  거래량 배율: {config['volume_surge_ratio']}x")
-        if 'bid_ask_ratio_min' in config:
-            print(f"  호가 비율: {config['bid_ask_ratio_min']}+")
-
-    elif strategy_type == 'momentum_breakout':
+    if strategy_type == 'momentum_breakout':
         print(f"  고점 기간: {config.get('lookback_period', 20)}일")
         print(f"  거래량 임계값: {config.get('volume_threshold', 1.5)}x")
         print(f"  RSI 최소: {config.get('rsi_min', 50)}")
@@ -124,6 +65,13 @@ def print_config(config: Dict):
             print(f"  주기적 재초기화: 비활성화")
         print(f"  볼린저 밴드 기간: {config.get('bb_period', 20)}")
         print(f"  BB 폭 변화 임계값: {config.get('bb_width_change_threshold', 30.0)}%")
+
+        # 볼린저 밴드 매수 필터 설정
+        use_bb_filter = config.get('use_bb_entry_filter', True)
+        if use_bb_filter:
+            print(f"  BB 매수 필터: 활성화 (하위 {config.get('bb_entry_position_max', 0.4)*100:.0f}% 이내)")
+        else:
+            print(f"  BB 매수 필터: 비활성화")
 
     elif strategy_type == 'volatility_breakout':
         print(f"  ATR 기간: {config.get('atr_period', 14)}")
@@ -162,7 +110,6 @@ def get_momentum_breakout_config() -> Dict:
     """
     return {
         'strategy_type': 'momentum_breakout',
-        'initial_capital': 1_000_000,
 
         # 청산 조건
         'target_profit': 3.0,  # +3%
@@ -170,7 +117,7 @@ def get_momentum_breakout_config() -> Dict:
         'fee_rate': 0.05,
 
         # 브레이크아웃 파라미터
-        'lookback_period': 20,  # 20일 고점
+        'lookback_period': 7,  # 7일 고점
         'volume_threshold': 1.5,  # 거래량 1.5배
         'rsi_min': 50,  # RSI > 50
 
@@ -180,7 +127,7 @@ def get_momentum_breakout_config() -> Dict:
         'macd_signal': 9,
 
         # 트레일링 스톱
-        'trailing_stop_pct': 2.0,  # 고점 대비 -2%
+        'trailing_stop_pct': 0.8,  # 고점 대비 -0.8%
 
         # 기타
         'cooldown_minutes': 5,
@@ -199,33 +146,38 @@ def get_grid_trading_config() -> Dict:
     """
     return {
         'strategy_type': 'grid_trading',
-        'initial_capital': 1_000_000,
 
         # 그리드 파라미터
         'grid_levels': 5,  # 5개 그리드
-        'grid_spacing': 1.0,  # 1% 간격
+        'grid_spacing': 0.7,  # 0.7% 간격
         'max_positions': 3,  # 최대 3개 동시 보유
 
         # 변동성 조건
-        'atr_period': 14,
+        'atr_period': 12,
         'max_atr_threshold': 0.8,  # ATR < 평균의 80%
 
         # 청산 조건
-        'single_position_stop_loss': -1.5,  # 개별 포지션 손절 -1.5%
-        'single_grid_profit': 1.0,  # 개별 그리드 +1%
-        'total_stop_loss': -3.0,  # 전체 손실 -3%
+        'single_position_stop_loss': -0.5,  # 개별 포지션 손절 -0.5%
+        'single_grid_profit': 0.7,  # 개별 그리드 +0.7%
+        'total_stop_loss': 0,  # 전체 손실 -3%
         'long_hold_minutes': 0,  # 장기 보유 손절 비활성화
         'long_hold_loss_threshold': -1.0,
         'fee_rate': 0.05,
 
         # 그리드 재초기화
-        'grid_reset_hours': 8,  # 8시간마다 재초기화
+        'grid_reset_hours': 1,  # 1시간마다 재초기화
         'bb_period': 20,  # 볼린저 밴드 기간
         'bb_std': 2.0,
         'bb_width_change_threshold': 30.0,  # BB 폭 30% 변화 시 재초기화
 
+        # 볼린저 밴드 매수 필터 (박스권 상단 진입 방지)
+        'use_bb_entry_filter': True,  # BB 매수 필터 사용
+        'bb_entry_position_max': 0.2,  # BB 하위 30% 이내에서만 매수 (기본)
+        'bb_width_multiplier_narrow': 1.0,  # 좁은 밴드폭(< 4%): 40% 이내
+        'bb_width_multiplier_wide': 1.5,  # 넓은 밴드폭(> 8%): 60% 이내
+
         # 기타
-        'cooldown_minutes': 0,
+        'cooldown_minutes': 3,
         'max_trades_per_day': None,  # 무제한
     }
 
@@ -241,7 +193,6 @@ def get_volatility_breakout_config() -> Dict:
     """
     return {
         'strategy_type': 'volatility_breakout',
-        'initial_capital': 1_000_000,
 
         # ATR 파라미터
         'atr_period': 14,
@@ -276,7 +227,6 @@ def get_bollinger_reversal_config() -> Dict:
     """
     return {
         'strategy_type': 'bollinger_reversal',
-        'initial_capital': 1_000_000,
 
         # 볼린저밴드
         'bb_period': 20,
@@ -305,10 +255,6 @@ def get_bollinger_reversal_config() -> Dict:
 
 # 프리셋 맵핑
 PRESETS = {
-    # 기존 RSI 스캘핑
-    'default': get_grid_trading_config,
-
-    # 새로운 전략들
     'momentum-breakout': get_momentum_breakout_config,
     'grid-trading': get_grid_trading_config,
     'volatility-breakout': get_volatility_breakout_config,
@@ -316,18 +262,18 @@ PRESETS = {
 }
 
 
-def get_config(preset: str = 'default') -> Dict:
+def get_config(preset: str = 'grid-trading') -> Dict:
     """
     프리셋으로 설정 가져오기
     
     Args:
-        preset: 'default'
+        preset: 'grid-trading'
     
     Returns:
         설정 딕셔너리
     """
     if preset not in PRESETS:
-        print(f"⚠️ 알 수 없는 프리셋: {preset}, default 사용")
-        preset = 'default'
+        print(f"⚠️ 알 수 없는 프리셋: {preset}, grid-trading 사용")
+        preset = 'grid-trading'
     
     return PRESETS[preset]()

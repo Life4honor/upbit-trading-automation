@@ -49,9 +49,9 @@ class GridTradingStrategy(BaseStrategy):
 
         # 청산 파라미터
         self.single_position_stop_loss = config.get('single_position_stop_loss', -1.5)  # 개별 포지션 손절 (%)
-        self.total_stop_loss = config.get('total_stop_loss', -3.0)  # 총 손실 한도 (%)
+        self.total_stop_loss = config.get('total_stop_loss', 0)  # 총 손실 한도 (%) (0 이면 비활성화)
         self.single_grid_profit = config.get('single_grid_profit', 1.0)  # 개별 그리드 수익률 (%)
-        self.long_hold_minutes = config.get('long_hold_minutes', 0)  # 장기 보유 시간 (분, 0이면 비활성화)
+        self.long_hold_minutes = config.get('long_hold_minutes', 0)  # 장기 보유 시간 (분, 0 이면 비활성화)
         self.long_hold_loss_threshold = config.get('long_hold_loss_threshold', -1.0)  # 장기 보유 손절 임계값 (%)
 
         # 그리드 재초기화 파라미터
@@ -59,6 +59,12 @@ class GridTradingStrategy(BaseStrategy):
         self.bb_period = config.get('bb_period', 20)  # 볼린저 밴드 기간
         self.bb_std = config.get('bb_std', 2.0)  # 볼린저 밴드 표준편차
         self.bb_width_change_threshold = config.get('bb_width_change_threshold', 30.0)  # 밴드폭 변화율 임계값 (%)
+
+        # 볼린저 밴드 매수 조건 파라미터
+        self.use_bb_entry_filter = config.get('use_bb_entry_filter', True)  # BB 매수 필터 사용 여부
+        self.bb_entry_position_max = config.get('bb_entry_position_max', 0.4)  # BB 최대 위치 (0.4 = 하위 40%)
+        self.bb_width_multiplier_narrow = config.get('bb_width_multiplier_narrow', 1.0)  # 좁은 밴드폭 기준 배수
+        self.bb_width_multiplier_wide = config.get('bb_width_multiplier_wide', 1.5)  # 넓은 밴드폭 기준 배수
 
         # 그리드 상태 (런타임)
         self.grid_prices = []  # 그리드 가격 레벨
@@ -101,6 +107,69 @@ class GridTradingStrategy(BaseStrategy):
         nearest_idx = min(range(len(self.grid_prices)),
                          key=lambda i: abs(self.grid_prices[i] - price))
         return nearest_idx, self.grid_prices[nearest_idx]
+
+    def check_bb_entry_condition(self, market_data: Dict) -> Tuple[bool, str]:
+        """
+        볼린저 밴드 기반 매수 조건 체크 (동적)
+
+        밴드폭에 따라 적정 매수 거리를 동적으로 조정:
+        - 좁은 밴드폭 (< 4%): 하위 40% 이내에서만 매수
+        - 보통 밴드폭 (4-8%): 하위 50% 이내에서만 매수
+        - 넓은 밴드폭 (> 8%): 하위 60% 이내에서만 매수
+
+        Args:
+            market_data: 시장 데이터
+                - current_price: 현재가
+                - bb_upper: 볼린저 밴드 상단
+                - bb_lower: 볼린저 밴드 하단
+
+        Returns:
+            (진입 가능 여부, 사유)
+        """
+        if not self.use_bb_entry_filter:
+            return True, "BB 필터 비활성화"
+
+        current_price = market_data['current_price']
+        bb_upper = market_data.get('bb_upper')
+        bb_lower = market_data.get('bb_lower')
+
+        # BB 데이터 없으면 통과
+        if not bb_upper or not bb_lower or bb_upper <= bb_lower:
+            return True, "BB 데이터 없음"
+
+        # 1. 현재가의 BB 위치 계산 (0 = 하단, 1 = 상단)
+        bb_position = (current_price - bb_lower) / (bb_upper - bb_lower)
+
+        # 2. BB 폭 계산 (현재가 대비 %)
+        bb_width_pct = (bb_upper - bb_lower) / current_price * 100
+
+        # 3. 밴드폭에 따른 동적 임계값 계산
+        if bb_width_pct < 4.0:
+            # 좁은 밴드폭 (횡보장) -> 보수적 진입
+            max_position = self.bb_entry_position_max * self.bb_width_multiplier_narrow
+            width_type = "좁음"
+        elif bb_width_pct < 8.0:
+            # 보통 밴드폭 -> 적당한 진입
+            max_position = self.bb_entry_position_max * 1.25
+            width_type = "보통"
+        else:
+            # 넓은 밴드폭 (변동성 높음) -> 더 여유있게
+            max_position = self.bb_entry_position_max * self.bb_width_multiplier_wide
+            width_type = "넓음"
+
+        # 최대값 제한 (너무 높아지지 않도록)
+        max_position = min(max_position, 0.65)
+
+        # 4. 판정
+        if bb_position > max_position:
+            return False, (
+                f"BB 위치 과도 ({bb_position:.1%} > {max_position:.1%}, "
+                f"폭: {bb_width_pct:.1f}% [{width_type}])"
+            )
+
+        return True, (
+            f"BB 하단 근처 ({bb_position:.1%}, 폭: {bb_width_pct:.1f}% [{width_type}])"
+        )
 
     def should_reset_grid(self, market_data: Dict) -> Tuple[bool, str]:
         """
@@ -185,13 +254,18 @@ class GridTradingStrategy(BaseStrategy):
             if atr_ratio > self.max_atr_threshold:
                 return False, f"변동성 너무 높음 (ATR 비율: {atr_ratio:.2f})"
 
-        # 3. 그리드 재초기화 체크
+        # 3. 볼린저 밴드 위치 체크 (박스권 상단 진입 방지)
+        bb_ok, bb_reason = self.check_bb_entry_condition(market_data)
+        if not bb_ok:
+            return False, bb_reason
+
+        # 4. 그리드 재초기화 체크
         should_reset, reset_reason = self.should_reset_grid(market_data)
         if should_reset:
             timestamp = market_data.get('timestamp')
             self.initialize_grid(current_price, timestamp)
 
-        # 4. 그리드 하단 도달 체크
+        # 5. 그리드 하단 도달 체크
         # 현재가가 그리드 레벨 근처인지 확인 (±0.2% 허용)
         nearest_idx, nearest_grid = self.get_nearest_grid_level(current_price)
 
@@ -205,7 +279,7 @@ class GridTradingStrategy(BaseStrategy):
         if not (-0.2 <= price_diff_pct <= 0.1):
             return False, f"그리드 레벨 미도달 (차이: {price_diff_pct:+.2f}%)"
 
-        # 5. 중간 그리드 이하에서만 매수 (상단에서는 매수 안 함)
+        # 6. 중간 그리드 이하에서만 매수 (상단에서는 매수 안 함)
         mid_idx = len(self.grid_prices) // 2
         if nearest_idx > mid_idx:
             return False, f"그리드 상단 ({nearest_idx}/{len(self.grid_prices)})"
@@ -241,7 +315,7 @@ class GridTradingStrategy(BaseStrategy):
 
         # 3. 총 손실 한도 (포트폴리오 전체)
         total_profit_rate = market_data.get('total_profit_rate', 0)
-        if total_profit_rate <= self.total_stop_loss:
+        if total_profit_rate <= self.total_stop_loss and self.total_stop_loss != 0:
             return True, 'STOP_LOSS', f"총 손실 한도 도달 ({total_profit_rate:.2f}%)"
 
         # 4. 그리드 상단 도달 시 익절 (그리드 시스템 기반)

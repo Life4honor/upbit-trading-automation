@@ -79,15 +79,45 @@ class UnifiedTrader:
 
         # 전략 (팩토리 패턴)
         self.strategy = create_strategy(config)
-        
-        # 자본
-        self.initial_capital = config.get('initial_capital', 1000000)
-        self.capital = self.initial_capital
-        # trade_amount: config에서 지정하거나, 초기 자본의 80%로 자동 계산
-        self.trade_amount = config.get('trade_amount', int(self.initial_capital * 0.80))
+
+        # 자본 설정 (모드별 분리)
+        if mode == 'backtest':
+            # 백테스트: 100만원 고정
+            self.initial_capital = 1_000_000
+            self.capital = self.initial_capital
+            # trade_amount: config에서 지정하거나, 초기 자본의 80%로 자동 계산
+            self.trade_amount = config.get('trade_amount', int(self.initial_capital * 0.80))
+        else:
+            # 실거래: 업비트 API로 실제 자산 조회
+            if not api:
+                raise ValueError("실거래 모드는 UpbitAPI 인스턴스가 필요합니다")
+
+            # 현재 KRW 잔고 조회
+            krw_balance = api.get_balance('KRW')
+
+            # 보유 중인 코인 가치 조회
+            crypto_balance = api.get_balance(self.currency)
+            if crypto_balance > 0:
+                current_price = api.get_current_price(market)
+                crypto_value = crypto_balance * current_price
+            else:
+                crypto_value = 0
+
+            # 총 자산 = KRW 잔고 + 코인 가치
+            total_balance = krw_balance + crypto_value
+
+            self.initial_capital = total_balance
+            self.capital = self.initial_capital
+
+            # trade_amount: config에서 지정하거나, KRW 잔고의 80%로 자동 계산
+            default_trade_amount = int(krw_balance * 0.80)
+            self.trade_amount = min(
+                config.get('trade_amount', default_trade_amount),
+                int(krw_balance)  # KRW 잔고를 초과할 수 없음
+            )
         
         # 상태
-        self.position = None
+        self.positions = []  # 다중 포지션 관리 (그리드 트레이딩용)
         self.trades = []
         self.daily_stats = []
         self.today_trade_count = 0
@@ -239,7 +269,8 @@ class UnifiedTrader:
                 'atr': atr,
                 'atr_ma': atr_ma,
                 'latest_candle': data_5m.iloc[-1],
-                'volume_ma': volume_ma
+                'volume_ma': volume_ma,
+                'active_positions': len(self.positions)  # 현재 보유 포지션 수 추가
             }
 
             # 1시간 봉 RSI 추가 (옵션)
@@ -313,7 +344,8 @@ class UnifiedTrader:
                 'atr': atr,
                 'atr_ma': atr_ma,
                 'latest_candle': data_5m.iloc[-1],
-                'volume_ma': volume_ma
+                'volume_ma': volume_ma,
+                'active_positions': len(self.positions)  # 현재 보유 포지션 수 추가
             }
 
             # 1시간 봉 RSI 추가
@@ -353,8 +385,17 @@ class UnifiedTrader:
         if self.mode == 'backtest':
             # 시뮬레이션 매수
             entry_price = analysis['current_price']
-            # trade_amount를 일관되게 사용 (초기 자본의 80%)
-            amount = min(self.capital, self.trade_amount)
+
+            # 그리드 트레이딩용 자본 분산
+            strategy_type = self.config.get('strategy_type', 'scalping')
+            if strategy_type == 'grid_trading':
+                max_positions = self.config.get('max_positions', 3)
+                position_amount = self.trade_amount / max_positions  # 자본을 max_positions로 분할
+                amount = min(self.capital, position_amount)
+            else:
+                # 기존 전략은 전액 사용
+                amount = min(self.capital, self.trade_amount)
+
             fee = amount * (self.fee_rate / 100)
 
             # 동적 목표 수익률 계산 (전략이 지원하는 경우만)
@@ -370,7 +411,12 @@ class UnifiedTrader:
             if total_bid_size + total_ask_size > 0:
                 bid_imbalance = total_bid_size / (total_bid_size + total_ask_size)
 
-            self.position = {
+            # 그리드 레벨 정보 저장 (그리드 트레이딩용)
+            entry_grid_level = -1
+            if strategy_type == 'grid_trading' and hasattr(self.strategy, 'get_nearest_grid_level'):
+                entry_grid_level, _ = self.strategy.get_nearest_grid_level(entry_price)
+
+            position = {
                 'entry_time': timestamp,
                 'entry_price': entry_price,
                 'entry_rsi_5m': analysis['rsi_5m'],
@@ -387,28 +433,43 @@ class UnifiedTrader:
                 'amount': amount - fee,
                 'quantity': (amount - fee) / entry_price,
                 'fee': fee,
-                'target_profit': dynamic_target  # 동적 목표 저장
+                'target_profit': dynamic_target,  # 동적 목표 저장
+                'entry_grid_level': entry_grid_level  # 그리드 레벨 정보
             }
+
+            # 다중 포지션 관리
+            self.positions.append(position)
 
             self.capital -= amount
             self.today_trade_count += 1
             self.last_trade_time = timestamp
 
             target_info = f"목표: {dynamic_target:.2f}%" if dynamic_target is not None else ""
-            self.log(f"✅ 매수: ₩{entry_price:,.0f} (수량: {self.position['quantity']:.8f}) {target_info}")
+            position_count = len(self.positions)
+            self.log(f"✅ 매수 #{position_count}: ₩{entry_price:,.0f} (수량: {position['quantity']:.8f}) {target_info}")
             return True
 
         else:
             # 실제 매수
             krw_balance = self.api.get_balance('KRW')
 
-            if krw_balance < self.trade_amount:
+            # 그리드 트레이딩용 자본 분산
+            strategy_type = self.config.get('strategy_type', 'scalping')
+            if strategy_type == 'grid_trading':
+                max_positions = self.config.get('max_positions', 3)
+                position_amount = self.trade_amount / max_positions  # 자본을 max_positions로 분할
+                buy_amount = min(krw_balance, position_amount)
+            else:
+                # 기존 전략은 전액 사용
+                buy_amount = min(krw_balance, self.trade_amount)
+
+            if krw_balance < buy_amount:
                 self.log(f"⚠️ 잔고 부족: ₩{krw_balance:,.0f}")
                 return False
 
-            self.log(f"🔵 매수 시도: {self.market} @ ₩{analysis['current_price']:,.0f}")
+            self.log(f"🔵 매수 시도: {self.market} @ ₩{analysis['current_price']:,.0f} (₩{buy_amount:,.0f})")
 
-            result = self.api.buy_market(self.market, self.trade_amount)
+            result = self.api.buy_market(self.market, buy_amount)
 
             if result:
                 # 동적 목표 수익률 계산 (전략이 지원하는 경우만)
@@ -424,9 +485,15 @@ class UnifiedTrader:
                 if total_bid_size + total_ask_size > 0:
                     bid_imbalance = total_bid_size / (total_bid_size + total_ask_size)
 
-                self.position = {
+                # 그리드 레벨 정보 저장 (그리드 트레이딩용)
+                entry_price = analysis['current_price']
+                entry_grid_level = -1
+                if strategy_type == 'grid_trading' and hasattr(self.strategy, 'get_nearest_grid_level'):
+                    entry_grid_level, _ = self.strategy.get_nearest_grid_level(entry_price)
+
+                position = {
                     'entry_time': timestamp,
-                    'entry_price': analysis['current_price'],
+                    'entry_price': entry_price,
                     'entry_rsi_5m': analysis['rsi_5m'],
                     'entry_rsi_15m': analysis['rsi_15m'],
                     'entry_rsi_1h': analysis.get('rsi_1h'),
@@ -438,32 +505,51 @@ class UnifiedTrader:
                     'entry_volume_surge_ratio': (analysis['latest_candle']['volume'] / analysis['volume_ma']) if 'volume_ma' in analysis and analysis['volume_ma'] > 0 else None,
                     'entry_bid_ask_ratio': bid_ask_ratio,
                     'entry_bid_imbalance': bid_imbalance,
-                    'amount': self.trade_amount,
+                    'amount': buy_amount,
                     'order_id': result.get('uuid'),
-                    'target_profit': dynamic_target  # 동적 목표 저장
+                    'target_profit': dynamic_target,  # 동적 목표 저장
+                    'entry_grid_level': entry_grid_level  # 그리드 레벨 정보
                 }
+
+                # 다중 포지션 관리
+                self.positions.append(position)
 
                 self.today_trade_count += 1
                 self.last_trade_time = timestamp
 
                 target_info = f"목표: {dynamic_target:.2f}%" if dynamic_target is not None else ""
-                self.log(f"✅ 매수: ₩{analysis['current_price']:,.0f} (금액: ₩{self.trade_amount:,.0f}) {target_info}")
+                position_count = len(self.positions)
+                self.log(f"✅ 매수 #{position_count}: ₩{entry_price:,.0f} (금액: ₩{buy_amount:,.0f}) {target_info}")
                 return True
 
             return False
     
-    def execute_sell(self, analysis: Dict, timestamp: datetime, reason: str) -> bool:
-        """매도 실행"""
+    def execute_sell(self, analysis: Dict, timestamp: datetime, reason: str, position_idx: int = 0) -> bool:
+        """
+        매도 실행
+
+        Args:
+            analysis: 시장 데이터
+            timestamp: 현재 시각
+            reason: 청산 사유
+            position_idx: 청산할 포지션 인덱스 (기본값 0 = 첫 번째 포지션)
+        """
         if self.mode == 'backtest':
+            # 포지션 없으면 종료
+            if not self.positions or position_idx >= len(self.positions):
+                return False
+
+            position = self.positions[position_idx]
+
             # 시뮬레이션 매도
             exit_price = analysis['current_price']
-            sell_amount = self.position['quantity'] * exit_price
+            sell_amount = position['quantity'] * exit_price
             fee = sell_amount * (self.fee_rate / 100)
             net_amount = sell_amount - fee
 
-            profit = net_amount - self.position['amount']
-            profit_rate = (profit / self.position['amount']) * 100
-            holding_time = (timestamp - self.position['entry_time']).total_seconds() / 60
+            profit = net_amount - position['amount']
+            profit_rate = (profit / position['amount']) * 100
+            holding_time = (timestamp - position['entry_time']).total_seconds() / 60
 
             self.capital += net_amount
 
@@ -477,25 +563,25 @@ class UnifiedTrader:
 
             trade = {
                 'timestamp': timestamp,
-                'entry_time': self.position['entry_time'],
-                'entry_price': self.position['entry_price'],
+                'entry_time': position['entry_time'],
+                'entry_price': position['entry_price'],
                 'exit_price': exit_price,
                 'profit': profit,
                 'profit_rate': profit_rate,
                 'holding_time': holding_time,
                 'reason': reason,
                 # 매수 시점 데이터
-                'entry_rsi_5m': self.position.get('entry_rsi_5m', self.position.get('entry_rsi')),  # 하위 호환성
-                'entry_rsi_15m': self.position.get('entry_rsi_15m'),
-                'entry_rsi_1h': self.position.get('entry_rsi_1h'),
-                'entry_sma_7': self.position.get('entry_sma_7'),
-                'entry_sma_25': self.position.get('entry_sma_25'),
-                'entry_sma_99': self.position.get('entry_sma_99'),
-                'entry_volume': self.position.get('entry_volume'),
-                'entry_volume_ma': self.position.get('entry_volume_ma'),
-                'entry_volume_surge_ratio': self.position.get('entry_volume_surge_ratio'),
-                'entry_bid_ask_ratio': self.position.get('entry_bid_ask_ratio'),
-                'entry_bid_imbalance': self.position.get('entry_bid_imbalance'),
+                'entry_rsi_5m': position.get('entry_rsi_5m', position.get('entry_rsi')),  # 하위 호환성
+                'entry_rsi_15m': position.get('entry_rsi_15m'),
+                'entry_rsi_1h': position.get('entry_rsi_1h'),
+                'entry_sma_7': position.get('entry_sma_7'),
+                'entry_sma_25': position.get('entry_sma_25'),
+                'entry_sma_99': position.get('entry_sma_99'),
+                'entry_volume': position.get('entry_volume'),
+                'entry_volume_ma': position.get('entry_volume_ma'),
+                'entry_volume_surge_ratio': position.get('entry_volume_surge_ratio'),
+                'entry_bid_ask_ratio': position.get('entry_bid_ask_ratio'),
+                'entry_bid_imbalance': position.get('entry_bid_imbalance'),
                 # 매도 시점 데이터
                 'exit_rsi_5m': analysis['rsi_5m'],
                 'exit_rsi_15m': analysis.get('rsi_15m'),
@@ -509,38 +595,50 @@ class UnifiedTrader:
                 'exit_bid_ask_ratio': bid_ask_ratio,
                 'exit_bid_imbalance': bid_imbalance,
                 # 목표 수익률
-                'target_profit': self.position.get('target_profit')
+                'target_profit': position.get('target_profit')
             }
 
             self.trades.append(trade)
             self.update_daily_stats(timestamp.date(), trade)
-            self.position = None
+
+            # 해당 포지션 제거
+            self.positions.pop(position_idx)
             self.last_trade_time = timestamp
 
-            self.log(f"✅ 매도: ₩{exit_price:,.0f} | {profit_rate:+.2f}% (₩{profit:+,.0f}) | {reason}")
+            remaining_positions = len(self.positions)
+            self.log(f"✅ 매도 #{position_idx+1}: ₩{exit_price:,.0f} | {profit_rate:+.2f}% (₩{profit:+,.0f}) | {reason} (잔여: {remaining_positions})")
             return True
 
         else:
             # 실제 매도
+            # 포지션 없으면 종료
+            if not self.positions or position_idx >= len(self.positions):
+                self.log(f"⚠️ 포지션 없음")
+                return False
+
+            position = self.positions[position_idx]
+
             position_info = self.api.get_position(self.market)
 
             if not position_info or position_info['balance'] == 0:
                 self.log(f"⚠️ 보유량 없음")
-                self.position = None
+                # 포지션 정보와 실제 잔고 불일치 시 포지션 제거
+                self.positions.pop(position_idx)
                 return False
 
+            # 실거래에서는 전량 매도 (부분 매도는 복잡하므로 단순화)
             volume = position_info['balance']
 
-            self.log(f"🔴 매도 시도: {volume:.8f} ({reason})")
+            self.log(f"🔴 매도 시도 #{position_idx+1}: {volume:.8f} ({reason})")
 
             result = self.api.sell_market(self.market, volume)
 
             if result:
-                entry_price = self.position['entry_price']
+                entry_price = position['entry_price']
                 exit_price = analysis['current_price']
                 profit_rate = (exit_price - entry_price) / entry_price * 100
                 profit_amount = (exit_price - entry_price) * volume
-                holding_time = (timestamp - self.position['entry_time']).total_seconds() / 60
+                holding_time = (timestamp - position['entry_time']).total_seconds() / 60
 
                 # 호가 데이터 계산 (매도 시)
                 bid_ask_ratio = analysis.get('bid_ask_ratio')
@@ -552,7 +650,7 @@ class UnifiedTrader:
 
                 trade = {
                     'timestamp': timestamp,
-                    'entry_time': self.position['entry_time'],
+                    'entry_time': position['entry_time'],
                     'entry_price': entry_price,
                     'exit_price': exit_price,
                     'profit': profit_amount,
@@ -561,17 +659,17 @@ class UnifiedTrader:
                     'reason': reason,
                     'order_id': result.get('uuid'),
                     # 매수 시점 데이터
-                    'entry_rsi_5m': self.position.get('entry_rsi_5m', self.position.get('entry_rsi')),  # 하위 호환성
-                    'entry_rsi_15m': self.position.get('entry_rsi_15m'),
-                    'entry_rsi_1h': self.position.get('entry_rsi_1h'),
-                    'entry_sma_7': self.position.get('entry_sma_7'),
-                    'entry_sma_25': self.position.get('entry_sma_25'),
-                    'entry_sma_99': self.position.get('entry_sma_99'),
-                    'entry_volume': self.position.get('entry_volume'),
-                    'entry_volume_ma': self.position.get('entry_volume_ma'),
-                    'entry_volume_surge_ratio': self.position.get('entry_volume_surge_ratio'),
-                    'entry_bid_ask_ratio': self.position.get('entry_bid_ask_ratio'),
-                    'entry_bid_imbalance': self.position.get('entry_bid_imbalance'),
+                    'entry_rsi_5m': position.get('entry_rsi_5m', position.get('entry_rsi')),  # 하위 호환성
+                    'entry_rsi_15m': position.get('entry_rsi_15m'),
+                    'entry_rsi_1h': position.get('entry_rsi_1h'),
+                    'entry_sma_7': position.get('entry_sma_7'),
+                    'entry_sma_25': position.get('entry_sma_25'),
+                    'entry_sma_99': position.get('entry_sma_99'),
+                    'entry_volume': position.get('entry_volume'),
+                    'entry_volume_ma': position.get('entry_volume_ma'),
+                    'entry_volume_surge_ratio': position.get('entry_volume_surge_ratio'),
+                    'entry_bid_ask_ratio': position.get('entry_bid_ask_ratio'),
+                    'entry_bid_imbalance': position.get('entry_bid_imbalance'),
                     # 매도 시점 데이터
                     'exit_rsi_5m': analysis['rsi_5m'],
                     'exit_rsi_15m': analysis.get('rsi_15m'),
@@ -585,15 +683,18 @@ class UnifiedTrader:
                     'exit_bid_ask_ratio': bid_ask_ratio,
                     'exit_bid_imbalance': bid_imbalance,
                     # 목표 수익률
-                    'target_profit': self.position.get('target_profit')
+                    'target_profit': position.get('target_profit')
                 }
 
                 self.trades.append(trade)
                 self.update_daily_stats(timestamp.date(), trade)
-                self.position = None
+
+                # 해당 포지션 제거
+                self.positions.pop(position_idx)
                 self.last_trade_time = timestamp
 
-                self.log(f"✅ 매도: ₩{exit_price:,.0f} | {profit_rate:+.2f}% (₩{profit_amount:+,.0f}) | {reason}")
+                remaining_positions = len(self.positions)
+                self.log(f"✅ 매도 #{position_idx+1}: ₩{exit_price:,.0f} | {profit_rate:+.2f}% (₩{profit_amount:+,.0f}) | {reason} (잔여: {remaining_positions})")
                 return True
 
             return False
@@ -670,29 +771,29 @@ class UnifiedTrader:
 
             analysis = self.analyze_market(current_5m, current_15m, current_1h)
 
-            # 포지션 보유 중
-            if self.position:
-                holding_minutes = (timestamp - self.position['entry_time']).total_seconds() / 60
+            # 포지션 보유 중 - 각 포지션 개별 체크 (역순으로 순회하여 안전하게 삭제)
+            for i in range(len(self.positions) - 1, -1, -1):
+                position = self.positions[i]
+                holding_minutes = (timestamp - position['entry_time']).total_seconds() / 60
                 should_sell, _, reason = self.strategy.check_exit_conditions(
-                    self.position, analysis, holding_minutes
+                    position, analysis, holding_minutes
                 )
 
                 if should_sell:
-                    self.execute_sell(analysis, timestamp, reason)
+                    self.execute_sell(analysis, timestamp, reason, position_idx=i)
 
-            # 포지션 없음
-            else:
-                if self.can_trade(timestamp):
-                    check_count += 1
-                    should_buy, reason = self.strategy.check_entry_conditions(analysis)
+            # 추가 매수 가능 여부 체크
+            if self.can_trade(timestamp):
+                check_count += 1
+                should_buy, reason = self.strategy.check_entry_conditions(analysis)
 
-                    if should_buy:
-                        self.execute_buy(analysis, timestamp)
-                    else:
-                        # 실패 이유 카운트
-                        if reason not in condition_failures:
-                            condition_failures[reason] = 0
-                        condition_failures[reason] += 1
+                if should_buy:
+                    self.execute_buy(analysis, timestamp)
+                else:
+                    # 실패 이유 카운트
+                    if reason not in condition_failures:
+                        condition_failures[reason] = 0
+                    condition_failures[reason] += 1
         
         print()
 
@@ -709,11 +810,13 @@ class UnifiedTrader:
                     self.log(f"  {reason}: {count:,}회 ({percentage:.1f}%)")
             self.log("=" * 60)
 
-        # 미청산 포지션
-        if self.position:
-            self.log("⚠️ 미청산 포지션 청산")
+        # 미청산 포지션 전량 청산
+        if self.positions:
+            self.log(f"⚠️ 미청산 포지션 {len(self.positions)}개 청산")
             analysis = self.analyze_market(data_5m, data_15m, data_1h)
-            self.execute_sell(analysis, data_5m.index[-1], "기간 종료")
+            # 역순으로 청산
+            for i in range(len(self.positions) - 1, -1, -1):
+                self.execute_sell(analysis, data_5m.index[-1], "기간 종료", position_idx=i)
 
         # 결과 분석
         results = self.analyze_results(days)
@@ -729,28 +832,22 @@ class UnifiedTrader:
         """그리드 트레이딩 전략용 로그"""
         current_price = analysis['current_price']
 
-        # 포지션 정보
+        # 다중 포지션 정보
         position_info = ""
-        target_info = ""
-        stop_info = ""
+        if self.positions:
+            total_profit_rate = 0
+            avg_entry_price = 0
 
-        if self.position:
-            entry_price = self.position['entry_price']
-            profit_rate = (current_price - entry_price) / entry_price * 100
-            profit_emoji = "📈" if profit_rate > 0 else "📉"
-            holding_time = (timestamp - self.position['entry_time']).total_seconds() / 60
+            for pos in self.positions:
+                avg_entry_price += pos['entry_price']
+                profit_rate = (current_price - pos['entry_price']) / pos['entry_price'] * 100
+                total_profit_rate += profit_rate
 
-            # 익절 목표 (개별 그리드 +1%)
-            target_price = entry_price * (1 + self.strategy.single_grid_profit / 100)
-            target_distance = (target_price - current_price) / current_price * 100
-            target_info = f" | 익절목표: ₩{target_price:,.0f} ({target_distance:+.2f}%)"
+            avg_entry_price /= len(self.positions)
+            avg_profit_rate = total_profit_rate / len(self.positions)
+            profit_emoji = "📈" if avg_profit_rate > 0 else "📉"
 
-            # 손절 기준 (전체 -3%)
-            stop_price = entry_price * (1 + self.strategy.total_stop_loss / 100)
-            stop_distance = (stop_price - current_price) / current_price * 100
-            stop_info = f" | 손절: ₩{stop_price:,.0f} ({stop_distance:+.2f}%)"
-
-            position_info = f" | {profit_emoji} {profit_rate:+.2f}% (평단: ₩{entry_price:,.0f}) | {holding_time:.0f}분"
+            position_info = f" | 포지션: {len(self.positions)}개 | {profit_emoji} 평균 {avg_profit_rate:+.2f}% (평단: ₩{avg_entry_price:,.0f})"
 
         # ATR 정보
         atr_info = ""
@@ -781,20 +878,22 @@ class UnifiedTrader:
             grid_info = f" | 그리드: {grid_position:.0f}% ({grid_count}단계)"
 
         self.log(
-            f"📊 ₩{current_price:,.0f}{position_info}{target_info}{stop_info}{atr_info}{bb_info}{grid_info}"
+            f"📊 ₩{current_price:,.0f}{position_info}{atr_info}{bb_info}{grid_info}"
         )
 
     def _log_scalping(self, analysis: Dict, timestamp: datetime):
         """RSI 스캘핑 등 기존 전략용 로그"""
         current_price = analysis['current_price']
 
-        # 포지션 정보
+        # 포지션 정보 (기존 전략은 단일 포지션)
         position_info = ""
-        if self.position:
-            entry_price = self.position['entry_price']
+        if self.positions:
+            # 첫 번째 포지션만 표시 (기존 전략과의 호환성)
+            position = self.positions[0]
+            entry_price = position['entry_price']
             profit_rate = (current_price - entry_price) / entry_price * 100
             profit_emoji = "📈" if profit_rate > 0 else "📉"
-            holding_time = (timestamp - self.position['entry_time']).total_seconds() / 60
+            holding_time = (timestamp - position['entry_time']).total_seconds() / 60
             position_info = f" | {profit_emoji} {profit_rate:+.2f}% (평단 ₩{entry_price:,.0f}) | 보유 {holding_time:.0f}분"
 
         # 이동평균선 정보
@@ -828,13 +927,27 @@ class UnifiedTrader:
         """실거래 실행"""
         if not self.api:
             raise ValueError("실거래 모드는 UpbitAPI 인스턴스가 필요합니다")
-        
+
         self.is_running = True
         self.log("=" * 60)
         self.log(f"🤖 자동매매 시작: {self.market}")
         self.log("=" * 60)
-        self.log(f"거래 금액: ₩{self.trade_amount:,.0f}")
-        self.log(f"체크 주기: {self.check_interval}초")
+
+        # 현재 자산 정보 출력
+        krw_balance = self.api.get_balance('KRW')
+        crypto_balance = self.api.get_balance(self.currency)
+        if crypto_balance > 0:
+            current_price = self.api.get_current_price(self.market)
+            crypto_value = crypto_balance * current_price
+            self.log(f"💰 KRW 잔고: ₩{krw_balance:,.0f}")
+            self.log(f"💎 {self.currency} 보유: {crypto_balance:.8f} (₩{crypto_value:,.0f})")
+            self.log(f"💵 총 자산: ₩{self.initial_capital:,.0f}")
+        else:
+            self.log(f"💰 KRW 잔고: ₩{krw_balance:,.0f}")
+            self.log(f"💵 총 자산: ₩{self.initial_capital:,.0f}")
+
+        self.log(f"🎯 거래 금액: ₩{self.trade_amount:,.0f}")
+        self.log(f"⏱️ 체크 주기: {self.check_interval}초")
         self.log("=" * 60)
         self.log("Ctrl+C로 중지")
         
@@ -860,23 +973,23 @@ class UnifiedTrader:
                     # 기존 RSI 스캘핑 등 다른 전략용 로그
                     self._log_scalping(analysis, timestamp)
                 
-                # 포지션 보유 중
-                if self.position:
-                    holding_minutes = (timestamp - self.position['entry_time']).total_seconds() / 60
+                # 포지션 보유 중 - 각 포지션 개별 체크 (역순으로 순회하여 안전하게 삭제)
+                for i in range(len(self.positions) - 1, -1, -1):
+                    position = self.positions[i]
+                    holding_minutes = (timestamp - position['entry_time']).total_seconds() / 60
                     should_sell, _, reason = self.strategy.check_exit_conditions(
-                        self.position, analysis, holding_minutes
+                        position, analysis, holding_minutes
                     )
-                    
+
                     if should_sell:
-                        self.execute_sell(analysis, timestamp, reason)
-                
-                # 포지션 없음
-                else:
-                    if self.can_trade(timestamp):
-                        should_buy, _ = self.strategy.check_entry_conditions(analysis)
-                        
-                        if should_buy:
-                            self.execute_buy(analysis, timestamp)
+                        self.execute_sell(analysis, timestamp, reason, position_idx=i)
+
+                # 추가 매수 가능 여부 체크
+                if self.can_trade(timestamp):
+                    should_buy, _ = self.strategy.check_entry_conditions(analysis)
+
+                    if should_buy:
+                        self.execute_buy(analysis, timestamp)
                 
                 # 대기
                 time.sleep(self.check_interval)
@@ -892,8 +1005,8 @@ class UnifiedTrader:
         """자동매매 중지"""
         self.is_running = False
 
-        if self.position:
-            self.log("⚠️ 포지션이 남아있습니다. 수동 정리 필요")
+        if self.positions:
+            self.log(f"⚠️ 포지션 {len(self.positions)}개가 남아있습니다. 수동 정리 필요")
 
         self.log("=" * 60)
         self.log("🛑 종료")
@@ -956,9 +1069,19 @@ class UnifiedTrader:
             total_rate = ((self.capital - self.initial_capital) / self.initial_capital) * 100
             final_capital = self.capital
         else:
-            # 라이브: 초기 자본 + 누적 손익
-            final_capital = self.initial_capital + total_profit
-            total_rate = (total_profit / self.initial_capital) * 100
+            # 라이브: 실제 잔고 조회
+            try:
+                krw_balance = self.api.get_balance('KRW')
+                crypto_balance = self.api.get_balance(self.currency)
+                current_price = self.api.get_current_price(self.market)
+                crypto_value = crypto_balance * current_price if crypto_balance else 0
+                final_capital = krw_balance + crypto_value
+            except Exception as e:
+                # API 조회 실패 시 초기 자본 + 누적 손익으로 폴백
+                self.log(f"⚠️ 잔고 조회 실패, 추정값 사용: {e}")
+                final_capital = self.initial_capital + total_profit
+
+            total_rate = ((final_capital - self.initial_capital) / self.initial_capital) * 100
         
         # MDD
         cum = df['profit'].cumsum()

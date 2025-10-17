@@ -79,6 +79,7 @@ class GridTradingStrategy(BaseStrategy):
         self.grid_initialized_at = None  # 그리드 초기화 시각
         self.last_bb_width = None  # 이전 볼린저 밴드 폭
         self.occupied_grid_levels = set()  # 이미 진입한 그리드 레벨 (중복 방지)
+        self.last_reset_time = None  # 마지막 그리드 리셋 시각 (쿨다운용)
 
     def compute_dynamic_spacing(self, atr: float, price: float) -> float:
         """
@@ -121,7 +122,9 @@ class GridTradingStrategy(BaseStrategy):
         """
         self.base_price = current_price
         self.grid_prices = []
-        self.grid_initialized_at = timestamp or datetime.now()
+        current_timestamp = timestamp or datetime.now()
+        self.grid_initialized_at = current_timestamp
+        self.last_reset_time = current_timestamp  # 리셋 시각 업데이트
 
         # 동적 spacing 계산 (ATR 기반)
         if atr is not None and self.atr_spacing_k is not None:
@@ -218,50 +221,64 @@ class GridTradingStrategy(BaseStrategy):
 
     def should_reset_grid(self, market_data: Dict) -> Tuple[bool, str]:
         """
-        그리드 재초기화 여부 판단
+        그리드 재초기화 여부 판단 (조건 기반)
+
+        시간 기반 리셋 제거, ATR 이탈 + 쿨다운 기반으로 변경
 
         Args:
             market_data: 시장 데이터
+                - current_price: 현재가
+                - timestamp: 현재 시각
+                - atr: ATR 값
 
         Returns:
             (재초기화 필요 여부, 사유)
         """
         current_price = market_data['current_price']
         current_time = market_data.get('timestamp')
+        atr = market_data.get('atr', 0)
 
         # 1. 첫 진입 - 항상 초기화
         if not self.grid_prices:
             return True, "첫 그리드 초기화"
 
-        # 2. 주기적 재초기화 체크 (설정된 경우)
-        if self.grid_reset_hours > 0 and self.grid_initialized_at and current_time:
-            hours_since_init = (current_time - self.grid_initialized_at).total_seconds() / 3600
-            if hours_since_init >= self.grid_reset_hours:
-                return True, f"주기적 재초기화 ({hours_since_init:.1f}시간 경과)"
+        # 2. 리셋 쿨다운 체크
+        reset_policy = self.config.get('reset_policy', {})
+        cooldown_hours = reset_policy.get('reset_cooldown_hours', 1.0)
 
-        # 3. 볼린저 밴드 폭 변화 체크
+        if self.last_reset_time and current_time:
+            hours_since_reset = (current_time - self.last_reset_time).total_seconds() / 3600
+            if hours_since_reset < cooldown_hours:
+                return False, ""  # 쿨다운 중에는 리셋 안 함
+
+        # 3. ATR 이탈 기반 리셋
+        if atr > 0:
+            atr_multiple = reset_policy.get('price_deviation_atr_multiple', 3.0)
+            min_grid = min(self.grid_prices)
+            max_grid = max(self.grid_prices)
+
+            # ATR * N 만큼 이탈 시 리셋
+            if current_price < min_grid - (atr * atr_multiple):
+                return True, f"하단 ATR 이탈 (가격: ₩{current_price:,.0f} < ₩{min_grid:,.0f} - {atr_multiple}*ATR)"
+            if current_price > max_grid + (atr * atr_multiple):
+                return True, f"상단 ATR 이탈 (가격: ₩{current_price:,.0f} > ₩{max_grid:,.0f} + {atr_multiple}*ATR)"
+
+        # 4. 볼린저 밴드 폭 변화 체크 (기존 유지)
         bb_upper = market_data.get('bb_upper')
         bb_lower = market_data.get('bb_lower')
 
         if bb_upper and bb_lower:
-            current_bb_width = (bb_upper - bb_lower) / current_price * 100  # 현재가 대비 밴드폭 (%)
+            bb_width_threshold = reset_policy.get('bb_width_change_threshold', 50.0)
+            current_bb_width = (bb_upper - bb_lower) / current_price * 100
 
             if self.last_bb_width is not None:
-                # 밴드폭 변화율 계산
                 width_change_pct = abs(current_bb_width - self.last_bb_width) / self.last_bb_width * 100
 
-                if width_change_pct >= self.bb_width_change_threshold:
+                if width_change_pct >= bb_width_threshold:
                     self.last_bb_width = current_bb_width
                     return True, f"볼린저 밴드폭 급변 ({width_change_pct:.1f}% 변화)"
 
             self.last_bb_width = current_bb_width
-
-        # 4. 가격 이탈 체크 (기존 로직 - 더 넓게 완화)
-        min_grid = min(self.grid_prices)
-        max_grid = max(self.grid_prices)
-
-        if current_price < min_grid * 0.85 or current_price > max_grid * 1.15:
-            return True, f"가격 이탈 (그리드: ₩{min_grid:,.0f}~₩{max_grid:,.0f})"
 
         return False, ""
 

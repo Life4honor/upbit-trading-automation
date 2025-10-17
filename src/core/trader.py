@@ -13,7 +13,7 @@ import requests
 
 from .api import UpbitAPI
 from .base_strategy import BaseStrategy
-from .strategies import GridTradingStrategy
+from .strategies import GridTradingStrategy, HybridGridStrategy
 
 
 def create_strategy(config: Dict) -> BaseStrategy:
@@ -33,10 +33,11 @@ def create_strategy(config: Dict) -> BaseStrategy:
 
     strategy_map = {
         'grid_trading': GridTradingStrategy,
+        'hybrid_grid': HybridGridStrategy,
     }
 
     if strategy_type not in strategy_map:
-        raise ValueError(f"알 수 없는 전략 타입: {strategy_type}. 사용 가능: grid_trading")
+        raise ValueError(f"알 수 없는 전략 타입: {strategy_type}. 사용 가능: {', '.join(strategy_map.keys())}")
 
     return strategy_map[strategy_type](config)
 
@@ -838,7 +839,12 @@ class UnifiedTrader:
             # 추가 매수 가능 여부 체크
             if self.can_trade(timestamp):
                 check_count += 1
-                should_buy, reason = self.strategy.check_entry_conditions(analysis)
+
+                # HybridGrid는 df 전달 필요
+                if hasattr(self.strategy, 'determine_market_mode'):
+                    should_buy, reason = self.strategy.check_entry_conditions(analysis, df=current_5m)
+                else:
+                    should_buy, reason = self.strategy.check_entry_conditions(analysis)
 
                 if should_buy:
                     self.execute_buy(analysis, timestamp)
@@ -930,8 +936,15 @@ class UnifiedTrader:
             grid_position = (current_price - min_grid) / (max_grid - min_grid) * 100
             grid_info = f" | 그리드: {grid_position:.0f}% ({grid_count}단계)"
 
+        # HybridGrid: 현재 모드 표시
+        mode_info = ""
+        if hasattr(self.strategy, 'current_mode'):
+            mode = self.strategy.current_mode
+            mode_emoji = {"range": "📊", "trend": "📈", "neutral": "⚖️"}.get(mode.value, "❓")
+            mode_info = f" | {mode_emoji} {mode.value.upper()}"
+
         self.log(
-            f"📊 ₩{current_price:,.0f}{position_info}{atr_info}{bb_info}{grid_info}"
+            f"📊 ₩{current_price:,.0f}{position_info}{atr_info}{bb_info}{grid_info}{mode_info}"
         )
 
     def _log_scalping(self, analysis: Dict, timestamp: datetime):
@@ -1019,7 +1032,7 @@ class UnifiedTrader:
                 # 전략별 로그 표시
                 strategy_type = self.strategy.config.get('strategy_type', 'scalping')
 
-                if strategy_type == 'grid_trading':
+                if strategy_type == 'grid_trading' or strategy_type == 'hybrid_grid':
                     # 그리드 트레이딩 전용 로그
                     self._log_grid_trading(analysis, timestamp)
                 else:
@@ -1039,7 +1052,13 @@ class UnifiedTrader:
 
                 # 추가 매수 가능 여부 체크
                 if self.can_trade(timestamp):
-                    should_buy, _ = self.strategy.check_entry_conditions(analysis)
+                    # HybridGrid는 df 전달 필요 (실거래는 fetch_candles로 조회)
+                    if hasattr(self.strategy, 'determine_market_mode'):
+                        # 최근 데이터 조회 (5분봉 100개)
+                        df_5m = self.fetch_candles(5, 100)
+                        should_buy, _ = self.strategy.check_entry_conditions(analysis, df=df_5m)
+                    else:
+                        should_buy, _ = self.strategy.check_entry_conditions(analysis)
 
                     if should_buy:
                         self.execute_buy(analysis, timestamp)

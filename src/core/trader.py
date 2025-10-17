@@ -13,13 +13,7 @@ import requests
 
 from .api import UpbitAPI
 from .base_strategy import BaseStrategy
-from .strategies import (
-    ScalpingStrategy,
-    MomentumBreakoutStrategy,
-    GridTradingStrategy,
-    VolatilityBreakoutStrategy,
-    BollingerReversalStrategy,
-)
+from .strategies import GridTradingStrategy
 
 
 def create_strategy(config: Dict) -> BaseStrategy:
@@ -35,18 +29,14 @@ def create_strategy(config: Dict) -> BaseStrategy:
     Raises:
         ValueError: 알 수 없는 전략 타입
     """
-    strategy_type = config.get('strategy_type', 'scalping')
+    strategy_type = config.get('strategy_type', 'grid_trading')
 
     strategy_map = {
-        'scalping': ScalpingStrategy,
-        'momentum_breakout': MomentumBreakoutStrategy,
         'grid_trading': GridTradingStrategy,
-        'volatility_breakout': VolatilityBreakoutStrategy,
-        'bollinger_reversal': BollingerReversalStrategy,
     }
 
     if strategy_type not in strategy_map:
-        raise ValueError(f"알 수 없는 전략 타입: {strategy_type}")
+        raise ValueError(f"알 수 없는 전략 타입: {strategy_type}. 사용 가능: grid_trading")
 
     return strategy_map[strategy_type](config)
 

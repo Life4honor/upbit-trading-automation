@@ -99,42 +99,6 @@ def print_config(config: Dict):
     print("=" * 40)
 
 
-def get_momentum_breakout_config() -> Dict:
-    """
-    모멘텀 브레이크아웃 전략
-
-    특징:
-    - 고점 돌파 + 거래량 급증
-    - 강한 추세 포착
-    - 중간 승률, 큰 수익
-    """
-    return {
-        'strategy_type': 'momentum_breakout',
-
-        # 청산 조건
-        'target_profit': 3.0,  # +3%
-        'stop_loss': -1.5,  # -1.5%
-        'fee_rate': 0.05,
-
-        # 브레이크아웃 파라미터
-        'lookback_period': 7,  # 7일 고점
-        'volume_threshold': 1.5,  # 거래량 1.5배
-        'rsi_min': 50,  # RSI > 50
-
-        # MACD
-        'macd_fast': 12,
-        'macd_slow': 26,
-        'macd_signal': 9,
-
-        # 트레일링 스톱
-        'trailing_stop_pct': 0.8,  # 고점 대비 -0.8%
-
-        # 기타
-        'cooldown_minutes': 5,
-        'max_trades_per_day': 10,
-    }
-
-
 def get_grid_trading_config() -> Dict:
     """
     그리드 트레이딩 전략
@@ -182,83 +146,9 @@ def get_grid_trading_config() -> Dict:
     }
 
 
-def get_volatility_breakout_config() -> Dict:
-    """
-    변동성 브레이크아웃 전략
-
-    특징:
-    - ATR 급증 포착
-    - 고위험 고수익
-    - 낮은 거래 빈도
-    """
-    return {
-        'strategy_type': 'volatility_breakout',
-
-        # ATR 파라미터
-        'atr_period': 14,
-        'atr_multiplier': 1.5,  # ATR > 평균의 1.5배
-        'breakout_atr_factor': 0.5,  # 전일 고점 + ATR*0.5
-
-        # 청산 조건 (동적 ATR 기반)
-        'target_atr_multiple': 2.0,  # 익절: ATR * 2
-        'stop_atr_multiple': 1.0,  # 손절: ATR * 1
-        'fee_rate': 0.05,
-
-        # 거래량
-        'volume_threshold': 1.2,
-
-        # 최소 변동성
-        'min_atr_krw': 10000,  # 최소 ATR 10,000원
-
-        # 기타
-        'cooldown_minutes': 10,
-        'max_trades_per_day': 5,
-    }
-
-
-def get_bollinger_reversal_config() -> Dict:
-    """
-    볼린저밴드 리버설 전략 (평균회귀)
-
-    특징:
-    - BB 하단 반등 포착
-    - 높은 승률
-    - 빠른 진입/청산
-    """
-    return {
-        'strategy_type': 'bollinger_reversal',
-
-        # 볼린저밴드
-        'bb_period': 20,
-        'bb_std': 2.0,
-        'bb_width_min': 2.0,  # 최소 변동성
-
-        # 진입 조건
-        'rsi_period': 14,
-        'rsi_oversold': 30,  # RSI < 30
-        'volume_threshold': 1.2,
-        'require_reversal_candle': True,  # 양봉 필수
-
-        # 청산 조건
-        'target_bb_position': 0.5,  # BB 중심선
-        'target_profit_pct': 2.0,  # 또는 +2%
-        'stop_loss_pct': -1.5,  # -1.5%
-        'time_stop_minutes': 60,  # 60분 시간 손절
-        'rsi_overbought': 70,  # RSI > 70 익절
-        'fee_rate': 0.05,
-
-        # 기타
-        'cooldown_minutes': 5,
-        'max_trades_per_day': 15,
-    }
-
-
 # 프리셋 맵핑
 PRESETS = {
-    'momentum-breakout': get_momentum_breakout_config,
     'grid-trading': get_grid_trading_config,
-    'volatility-breakout': get_volatility_breakout_config,
-    'bollinger-reversal': get_bollinger_reversal_config,
 }
 
 
